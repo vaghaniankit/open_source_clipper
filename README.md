@@ -6,7 +6,7 @@ FastAPI + Celery + Redis (Memurai) application for resumable uploads, YouTube do
 
 - **Uploads**: Resumable, chunked uploads for large files.
 - **YouTube**: Download and process videos directly from YouTube.
-- **Pipeline**: Automated audio extraction, transcription (faster-whisper), and highlight detection (LLM-based).
+- **Pipeline**: Automated audio extraction, transcription (faster-whisper), rich signal analysis (energy, scene cuts, audio events), and highlight detection (LLM-guided with heuristic fallback).
 - **Exports**: Generate clips in 1:1, 16:9, and 9:16 aspect ratios.
 - **UI**:
     - **Dashboard**: View job status and progress.
@@ -51,6 +51,22 @@ FastAPI + Celery + Redis (Memurai) application for resumable uploads, YouTube do
 - scripts/ (one-off scripts kept runnable)
 - docs/ (guides and notes)
 - requirements.txt
+
+## Highlight pipeline (simplified)
+
+- **Audio extraction & chunking**  
+  - Extract mono 16kHz audio from the source video using FFmpeg.  
+  - Chunk audio into overlapping windows for transcription.
+- **Transcription (faster-whisper)**  
+  - Run faster-whisper on each chunk and merge to a structured transcript with per-line timestamps.
+- **Signal analysis features**  
+  - **Energy** per segment (loudness / intensity).  
+  - **Scene / shot changes** from the source video (PySceneDetect).  
+  - **Audio events** such as music / laughter via a YamNet-style classifier.  
+  - Combine these into an **excitement score** per transcript line.
+- **Highlight selection**  
+  - Pass transcript text + features (energy, scene_id, near_cut, tags, excitement) into the LLM to propose highlight time ranges, then snap to transcript boundaries and enforce the UI duration preset.  
+  - If LLM calls fail (e.g. API/network/region issues), fall back to a **pure heuristic** mode using the excitement score + scene cuts to select the top segments and still produce clips.
 
 ## Environment variables
 
