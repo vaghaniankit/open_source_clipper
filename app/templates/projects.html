@@ -3,14 +3,8 @@
 {% block content %}
 <div class="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-    <!-- Top Bar -->
-    <div class="flex items-center justify-between mb-8">
-        <div class="flex items-center gap-4">
-            <button
-                class="w-10 h-10 flex items-center justify-center rounded-lg bg-[#1a1a1a] border border-white/10 text-white hover:bg-white/10 transition">
-                <i class="fa-solid fa-bars"></i>
-            </button>
-        </div>
+    <!-- Top Bar (simplified, no menu button) -->
+    <div class="flex items-center justify-end mb-8">
         <div class="flex items-center gap-4">
             <i class="fa-regular fa-bell text-gray-400 hover:text-white cursor-pointer"></i>
             <div class="flex items-center gap-1 text-yellow-500 font-bold text-sm">
@@ -56,9 +50,8 @@
 </div>
 
 <script>
-    let pollInterval;
-
     async function loadProjects() {
+
         try {
             const res = await fetch('/jobs');
             if (!res.ok) return;
@@ -139,26 +132,20 @@
                 grid.appendChild(card);
             });
 
-            // Poll if active jobs exist
-            if (hasActiveJobs) {
-                if (!pollInterval) {
-                    pollInterval = setTimeout(loadProjects, 3000);
-                }
-            } else {
-                clearTimeout(pollInterval);
-                pollInterval = null;
-            }
-
         } catch (e) {
             console.error(e);
         }
     }
 
+    // Initial load
     loadProjects();
+
+    // Auto-refresh jobs list every 3s while page is open
+    const pollInterval = setInterval(loadProjects, 3000);
 
     // Cleanup on navigate away
     window.addEventListener('beforeunload', () => {
-        if (pollInterval) clearTimeout(pollInterval);
+        clearInterval(pollInterval);
     });
 </script>
 {% endblock %}

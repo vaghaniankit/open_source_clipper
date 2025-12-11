@@ -87,11 +87,17 @@ def build_clip_srt(segments: List[Dict], clip_start: float, clip_end: float, cli
             # For segments without word timings, only drop if energy is extremely low
             if seg_energy < VERY_LOW_ENERGY:
                 continue
-            s = max(seg_start, clip_start)
-            e = min(seg_end, clip_end)
-            if e <= s:
+            # Clamp segment to the clip window and convert to *relative* times so
+            # subtitles line up with the cut clip rather than the full video.
+            s_abs = max(seg_start, clip_start)
+            e_abs = min(seg_end, clip_end)
+            if e_abs <= s_abs:
                 continue
-            word_windows.append({"start": s, "end": e, "text": text})
+            s_rel = s_abs - clip_start
+            e_rel = e_abs - clip_start
+            if e_rel <= s_rel:
+                continue
+            word_windows.append({"start": s_rel, "end": e_rel, "text": text})
             continue
 
         for w in words:

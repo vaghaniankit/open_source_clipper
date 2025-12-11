@@ -54,12 +54,15 @@
             </div>
 
             <!-- Navigation -->
-            <div class="pt-4 flex items-center gap-4">
+            <div class="pt-4 flex items-center justify-end gap-3">
                 <a href="/app/options"
-                    class="flex-1 text-center text-sm text-gray-400 hover:text-white py-3 transition">Back</a>
+                    class="px-5 py-2.5 rounded-xl border border-white/15 text-sm font-medium text-gray-300 hover:text-white hover:border-white/40 transition">
+                    Back
+                </a>
                 <button type="submit"
-                    class="flex-[2] bg-white text-black font-bold text-sm py-3 rounded-xl hover:bg-gray-200 transition transform active:scale-[0.99]">
-                    Get clips in 1 click <i class="fa-solid fa-bolt ml-2 text-yellow-600"></i>
+                    class="px-6 py-2.5 rounded-xl bg-white text-black font-bold text-sm hover:bg-gray-200 transition transform active:scale-[0.98] flex items-center gap-2">
+                    <span>Get clips in 1 click</span>
+                    <i class="fa-solid fa-bolt text-yellow-600"></i>
                 </button>
             </div>
 
@@ -68,21 +71,12 @@
 
 </div>
 
-<!-- Success Modal -->
-<div id="success-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
-    <div class="bg-[#111] border border-white/10 rounded-2xl p-8 max-w-sm w-full mx-4 text-center space-y-6 transform transition-all scale-95 opacity-0"
-        id="modal-content">
-        <div class="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto">
-            <i class="fa-solid fa-check text-2xl text-green-500"></i>
-        </div>
-        <div class="space-y-2">
-            <h3 class="text-xl font-bold text-white">Project Submitted!</h3>
-            <p class="text-gray-400 text-sm">Your video is being processed. We'll notify you when your clips are ready.
-            </p>
-        </div>
-        <div class="w-full bg-white/5 rounded-full h-1 overflow-hidden">
-            <div class="h-full bg-green-500 animate-progress origin-left" style="width: 100%"></div>
-        </div>
+<!-- Success Toast -->
+<div id="success-modal"
+    class="hidden fixed top-4 inset-x-0 z-50 flex justify-center pointer-events-none">
+    <div id="modal-content"
+        class="pointer-events-auto bg-[#04240f] border border-green-500/70 text-green-100 rounded-xl px-5 py-2.5 text-sm font-medium shadow-lg transform transition-all translate-y-[-8px] opacity-0">
+        Project submitted successfully!
     </div>
 </div>
 

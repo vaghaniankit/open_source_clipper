@@ -263,15 +263,13 @@ def export_clip_download(
         except Exception:
             subtitle_path = None
 
-    # 3) Apply speaker centering to the raw cut
-    centered_path = exports_dir / f"{Path(base_name).stem}_centered_tmp.mp4"
-    try:
-        from ..services.speaker_centering import center_speaker
-
-        ok = center_speaker(str(raw_cut), str(centered_path))
-        src_for_export = centered_path if ok and centered_path.exists() else raw_cut
-    except Exception:
-        src_for_export = raw_cut
+    # 3) Export HD clip with aspect and optional subtitles.
+    #
+    # NOTE: We intentionally do *not* run speaker centering here to keep this
+    # endpoint fast and predictable for the user. Speaker centering can still
+    # be triggered separately via the /export/centered endpoint using the
+    # resulting HD file.
+    src_for_export = raw_cut
 
     # 4) Export HD clip with aspect and optional subtitles
     from ..utils.export import export_with_aspect

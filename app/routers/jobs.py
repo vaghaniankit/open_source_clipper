@@ -177,7 +177,18 @@ def delete_clip(job_id: str, clip_id: str):
     # Update highlights.json
     highlights["clips"] = updated_clips
     highlights_path.write_text(json.dumps(highlights, indent=2), encoding="utf-8")
-    
+
+    # If no clips remain, clean up the whole job so it no longer appears as a
+    # project.
+    if not updated_clips:
+        # Remove exports for this job
+        exports_dir = STORAGE_DIR / "exports" / job_id
+        if exports_dir.exists():
+            shutil.rmtree(exports_dir, ignore_errors=True)
+        # Remove the pipeline job directory itself
+        if job_dir.exists():
+            shutil.rmtree(job_dir, ignore_errors=True)
+
     return JSONResponse({
         "success": True,
         "deleted_clip_id": clip_id,
@@ -278,7 +289,16 @@ def delete_clips_bulk(job_id: str, clip_ids: List[str] = Body(..., embed=True)):
     # Update highlights.json
     highlights["clips"] = updated_clips
     highlights_path.write_text(json.dumps(highlights, indent=2), encoding="utf-8")
-    
+
+    # If all clips were removed, clean up the job so it disappears from the
+    # projects view.
+    if not updated_clips:
+        exports_dir = STORAGE_DIR / "exports" / job_id
+        if exports_dir.exists():
+            shutil.rmtree(exports_dir, ignore_errors=True)
+        if job_dir.exists():
+            shutil.rmtree(job_dir, ignore_errors=True)
+
     return JSONResponse({
         "success": True,
         "deleted_count": deleted_count,

@@ -8,12 +8,15 @@ from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from openai import OpenAI
+from pathlib import Path
+
+from ..paths import STORAGE_DIR
 
 # ---------------- CONFIG ----------------
 client = OpenAI()
 
 MODEL = "gpt-4o-mini"            # or "gpt-4o" for best accuracy
-TOP_K = 10
+TOP_K = 20
 MAX_WORKERS = 4
 OVERLAP = 15.0                   # seconds overlap between chunks
 MIN_SEC = 30.0                   # default minimum highlight length
@@ -137,6 +140,10 @@ Your job: confidently pick engaging *time ranges* (start_time and end_time in se
     AND the features support it.
 - You should almost always return several clips when the transcript is non-empty. It is better to
   select a few reasonable candidates than to be over-cautious and return nothing.
+- When the video is long and has many intense or exciting moments (for example, a sports match with
+  multiple goals or big chances), prefer to surface **multiple distinct highlights** instead of a
+  single long summary clip. Treat each clearly exciting moment (e.g., each goal sequence) as its
+  own candidate highlight whenever the timestamps allow.
 - For short or low-intensity videos, still pick the most interesting parts (even if subtle) rather
   than returning zero clips.
 - For each clip return: id, start_time, end_time, category, title, caption, hashtags, description,
@@ -312,9 +319,20 @@ def rebuild_text_from_indices(si: int, ei: int, transcript: List[Dict]) -> str:
     return " ".join(t["text"].strip() for t in transcript[si:ei+1])
 
 def materialize_from_times(raw_clips: List[Dict], transcript: List[Dict], min_sec: float, max_sec: float) -> List[Dict]:
-    """Convert LLM start_time/end_time floats into snapped transcript-aligned clips."""
+    """Convert LLM start_time/end_time floats into snapped transcript-aligned clips.
+
+    We treat the UI preset as a *hard constraint* as much as the transcript
+    allows:
+    - Upper bound is always max_sec.
+    - Lower bound is max(30s, min_sec) so even for long presets like 90s–3m we
+      never intentionally return ultra-short clips when more context exists.
+    """
     materialized = []
     n = len(transcript)
+
+    # Effective minimum we will try to honour for all presets
+    effective_min_sec = max(30.0, float(min_sec))
+
     for clip in raw_clips:
         st = clip.get("start_time")
         et = clip.get("end_time")
@@ -336,7 +354,15 @@ def materialize_from_times(raw_clips: List[Dict], transcript: List[Dict], min_se
         # Snap to transcript boundaries
         sn_start, sn_end, si, ei = snap_time_to_transcript(st, et, transcript)
         # Enforce duration by expanding/ trimming to transcript line anchors
-        sn_start2, sn_end2, si2, ei2, reason = enforce_duration(sn_start, sn_end, si, ei, transcript, min_sec=min_sec, max_sec=max_sec)
+        sn_start2, sn_end2, si2, ei2, reason = enforce_duration(
+            sn_start,
+            sn_end,
+            si,
+            ei,
+            transcript,
+            min_sec=effective_min_sec,
+            max_sec=max_sec,
+        )
 
         # Do not allow the clip to drift too far earlier than the LLM's
         # suggested start_time. This avoids cases where expansion jumps all
@@ -371,10 +397,10 @@ def materialize_from_times(raw_clips: List[Dict], transcript: List[Dict], min_se
         # After all adjustments, if we are still well below the requested
         # minimum duration and the transcript has room, try to expand again
         # (prefer forwards, then slightly backwards but never before
-        # earliest_allowed). This avoids ultra-short clips like 7s when the
-        # user requested 60–90s.
+        # earliest_allowed). This avoids ultra-short clips when the user
+        # requested e.g. 60–90s.
         final_dur = sn_end2 - sn_start2
-        if final_dur + 1e-3 < min_sec:
+        if final_dur + 1e-3 < effective_min_sec:
             s_idx, e_idx = si2, ei2
             n_seg = len(transcript)
 
@@ -392,7 +418,7 @@ def materialize_from_times(raw_clips: List[Dict], transcript: List[Dict], min_se
 
             # 2) If still short and we have space backwards (without
             # violating earliest_allowed), try expanding start backwards.
-            if final_dur < min_sec - 1e-3 and s_idx > 0:
+            if final_dur < effective_min_sec - 1e-3 and s_idx > 0:
                 while s_idx > 0 and transcript[s_idx - 1]["start"] >= earliest_allowed:
                     candidate_start = transcript[s_idx - 1]["start"]
                     cand_dur = sn_end2 - candidate_start
@@ -401,10 +427,26 @@ def materialize_from_times(raw_clips: List[Dict], transcript: List[Dict], min_se
                     s_idx -= 1
                     sn_start2 = transcript[s_idx]["start"]
                     final_dur = sn_end2 - sn_start2
-                    if final_dur >= min_sec - 1e-3:
+                    if final_dur >= effective_min_sec - 1e-3:
                         break
 
             si2, ei2 = s_idx, e_idx
+
+        # If we *still* haven't reached the effective minimum but the
+        # transcript is long enough, do a final aggressive expansion around
+        # the current centre, giving priority to staying within [effective_min_sec, max_sec].
+        final_dur = sn_end2 - sn_start2
+        total_available = transcript[-1]["end"] - transcript[0]["start"]
+        target_min = min(effective_min_sec, total_available)
+        if final_dur + 1e-3 < target_min and total_available >= 5.0:
+            desired = min(max_sec, target_min)
+            mid = (sn_start2 + sn_end2) / 2.0
+            # Build a window of length `desired` around the midpoint, clamped to
+            # available transcript bounds, then snap to transcript lines.
+            win_start = max(transcript[0]["start"], mid - desired / 2.0)
+            win_end = min(transcript[-1]["end"], win_start + desired)
+            if win_end > win_start:
+                sn_start2, sn_end2, si2, ei2 = snap_time_to_transcript(win_start, win_end, transcript)
 
         # Rebuild text
         text = rebuild_text_from_indices(si2, ei2, transcript)
@@ -663,8 +705,10 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
     # dedupe near-duplicates (keep best)
     clips = deduplicate_clips_keep_best(clips, overlap_threshold=0.7)
 
-    # optional: enforce time diversity (min gap) to spread clips across timeline
-    def enforce_time_diversity_simple(clips_list: List[Dict], min_gap: float = 30.0) -> List[Dict]:
+    # optional: enforce time diversity (min gap) to spread clips across timeline.
+    # We keep this gentle so we don't collapse many good candidates down to just
+    # one or two clips on long videos.
+    def enforce_time_diversity_simple(clips_list: List[Dict], min_gap: float = 10.0) -> List[Dict]:
         clips_list.sort(key=lambda x: -x["overall"]) 
         selected = []
         occupied_until = float("-inf")
@@ -677,13 +721,60 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
     clips = merge_adjacent_clips(clips, max_gap=2.0, max_duration=MAX_SEC)
 
     clips_before_diversity = list(clips)
-    clips = enforce_time_diversity_simple(clips, min_gap=30.0)
+    # Only apply diversity pruning when we have a lot of clips; otherwise keep
+    # all of them so long videos with many funny moments can surface several
+    # highlights.
+    if len(clips) > 8:
+        clips = enforce_time_diversity_simple(clips, min_gap=10.0)
 
     # assign unique IDs and filenames
     clips = assign_unique_ids(clips)
 
     # final top-K
     top = clips[:TOP_K]
+
+    # Generate a thumbnail for each final clip so the UI can show a cover image.
+    # We grab a single frame from the source video at the clip's start time and
+    # save it under storage/exports/<job_id>/thumbs.
+    try:
+        job_path = Path(job_dir)
+        job_id = job_path.name
+        exports_dir = STORAGE_DIR / "exports" / job_id / "thumbs"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+
+        for clip in top:
+            try:
+                start = float(clip.get("start", 0.0) or 0.0)
+            except Exception:
+                start = 0.0
+            start = max(0.0, start)
+
+            clip_id = clip.get("id") or "clip"
+            thumb_name = f"{clip_id}.jpg"
+            thumb_path = exports_dir / thumb_name
+
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                str(start),
+                "-i",
+                str(input_video),
+                "-vframes",
+                "1",
+                "-q:v",
+                "3",
+                str(thumb_path),
+            ]
+
+            try:
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                rel = thumb_path.relative_to(STORAGE_DIR)
+                clip["thumbnail_url"] = f"/media/{rel.as_posix()}"
+            except Exception as e:
+                print(f"⚠️ Failed to generate thumbnail for {clip_id}: {e}")
+    except Exception as e:
+        print(f"⚠️ Thumbnail generation skipped due to error: {e}")
 
     # If we still ended up with no clips, try a heuristic fallback so the
     # caller always gets at least one highlight for non-empty transcripts.
