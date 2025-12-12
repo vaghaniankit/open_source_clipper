@@ -589,7 +589,8 @@
             try {
                 const res = await fetch(`/jobs/${jobId}/clips/${clipId}`, { method: 'DELETE' });
                 if (!res.ok) throw new Error('Delete failed');
-                window.location.href = `/app/jobs/${jobId}/clips`;
+                // After deleting from detail view, take the user back to My Projects
+                window.location.href = '/app/projects';
             } catch (e) {
                 alert('Failed to delete clip: ' + e.message);
                 if (deleteModal) deleteModal.classList.add('hidden');

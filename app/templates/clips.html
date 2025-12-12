@@ -5,15 +5,9 @@
 
   <!-- Top Bar -->
   <div class="flex items-center justify-between mb-6">
-    <div class="flex items-center gap-4">
-      <button
-        class="w-10 h-10 flex items-center justify-center rounded-lg bg-[#1a1a1a] border border-white/10 text-white hover:bg-white/10 transition">
-        <i class="fa-solid fa-bars"></i>
-      </button>
-      <div class="flex items-center gap-2 text-gray-400 text-sm">
-        <i class="fa-brands fa-youtube"></i>
-        <span class="truncate max-w-[300px]">{{ job.source_name or 'Untitled Video' }}</span>
-      </div>
+    <div class="flex items-center gap-2 text-gray-400 text-sm">
+      <i class="fa-brands fa-youtube"></i>
+      <span class="truncate max-w-[300px]">{{ job.source_name or 'Untitled Video' }}</span>
     </div>
     <div class="flex items-center gap-4">
       <button id="delete-selected-btn"
@@ -32,7 +26,7 @@
   </div>
 
   <!-- Search & Filter Bar -->
-  <div class="bg-[#111] border border-white/10 rounded-xl p-2 flex items-center gap-4 mb-6">
+  <div class="bg-[#111] border border-white/10 rounded-xl p-2 flex items-center gap-4 mb-4">
     <div class="flex-1 relative group">
       <div class="absolute inset-y-0 left-3 flex items-center pointer-events-none">
         <i class="fa-solid fa-magnifying-glass text-gray-500"></i>
@@ -44,7 +38,7 @@
   </div>
 
   <!-- Controls Row -->
-  <div class="flex items-center justify-between mb-4">
+  <div class="flex items-center justify-between mb-2">
     <div class="flex items-center gap-4">
       <button id="select-mode-btn"
         class="flex items-center gap-2 text-gray-400 hover:text-white text-xs font-medium transition">
@@ -65,9 +59,14 @@
     </div>
   </div>
 
+  <!-- Highlights Section (no outer container box, just heading + grid) -->
+  <div class="mt-3 mb-2 flex items-center justify-between">
+    <h2 class="text-sm font-semibold text-gray-200">Highlights for this project</h2>
+  </div>
+
   <!-- Clips Grid -->
   <div id="clips-grid"
-    class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 overflow-y-auto pb-20">
+    class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
     <!-- Clips injected here -->
   </div>
 
@@ -80,21 +79,20 @@
 </div>
 
 <!-- Delete Confirmation Modal -->
-<div id="delete-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4">
-  <!-- Solid dialog card so clips are not visible inside -->
-  <div class="bg-black/95 border border-white/20 rounded-2xl px-8 py-7 max-w-lg w-full shadow-2xl shadow-black/80">
-    <h3 class="text-white text-xl font-bold mb-3 text-center">Delete Clips?</h3>
-    <p class="text-gray-300 text-sm mb-6 leading-relaxed text-center">
+<div id="delete-modal" class="hidden fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center">
+  <div class="bg-black border border-white/20 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl shadow-black/80">
+    <h3 class="text-white text-lg md:text-xl font-bold mb-3 text-center">Delete Clips?</h3>
+    <p class="text-gray-300 text-xs md:text-sm mb-6 leading-relaxed text-center">
       Are you sure you want to delete <span id="delete-count">1</span> clip(s)?<br />
       This action cannot be undone.
     </p>
     <div class="flex gap-3 justify-center">
       <button id="cancel-delete-btn"
-        class="min-w-[120px] bg-white/10 text-white font-semibold py-2.5 rounded-lg hover:bg-white/20 transition">
+        class="flex-1 min-w-[110px] md:min-w-[120px] bg-white/10 text-white font-semibold py-2.5 rounded-lg hover:bg-white/20 transition text-center">
         Cancel
       </button>
       <button id="confirm-delete-btn"
-        class="min-w-[120px] bg-red-500 text-white font-semibold py-2.5 rounded-lg hover:bg-red-600 transition">
+        class="flex-1 min-w-[110px] md:min-w-[120px] bg-red-500 text-white font-semibold py-2.5 rounded-lg hover:bg-red-600 transition text-center">
         Delete
       </button>
     </div>
@@ -182,8 +180,13 @@
     try {
       if (pendingDeleteAction.type === 'single') {
         await deleteSingleClip(pendingDeleteAction.id);
+        // Optimistically update local state
+        allClips = allClips.filter((clip) => clip.id !== pendingDeleteAction.id);
       } else if (pendingDeleteAction.type === 'bulk') {
         await deleteBulkClips(pendingDeleteAction.ids);
+        // Optimistically update local state
+        const idSet = new Set(pendingDeleteAction.ids);
+        allClips = allClips.filter((clip) => !idSet.has(clip.id));
       }
 
       deleteModal.classList.add('hidden');
@@ -191,7 +194,14 @@
       selectedClips.clear();
       selectMode = false;
       updateSelectMode();
-      fetchClips();
+
+      // Re-render with updated list
+      renderClips();
+
+      // If there are no clips left, send user back to Projects page
+      if (!allClips.length) {
+        window.location.href = '/app/projects';
+      }
     } catch (e) {
       alert('Failed to delete clips: ' + e.message);
     }
@@ -224,7 +234,18 @@
 
   async function deleteSingleClip(clipId) {
     const res = await fetch(`/jobs/${jobId}/clips/${clipId}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Delete failed');
+    if (!res.ok) {
+      // If the clip or job is already gone, treat as success so UI can clean up
+      if (res.status === 404) {
+        return { success: true, deleted_clip_id: clipId, remaining_clips: allClips.length };
+      }
+      let detail = '';
+      try {
+        const data = await res.json();
+        detail = data?.detail ? `: ${data.detail}` : '';
+      } catch (_) { }
+      throw new Error('Delete failed' + detail);
+    }
     return await res.json();
   }
 
@@ -234,7 +255,18 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clip_ids: clipIds })
     });
-    if (!res.ok) throw new Error('Bulk delete failed');
+    if (!res.ok) {
+      // If job/clips are already gone, treat as success so we can just clear UI
+      if (res.status === 404) {
+        return { success: true, deleted_count: 0, remaining_clips: allClips.length };
+      }
+      let detail = '';
+      try {
+        const data = await res.json();
+        detail = data?.detail ? `: ${data.detail}` : '';
+      } catch (_) { }
+      throw new Error('Bulk delete failed' + detail);
+    }
     return await res.json();
   }
 
@@ -254,7 +286,7 @@
         }
       }
 
-      // If job is still running, poll again
+      // If job is still running, show spinner and poll again
       if (data.state === 'PENDING' || data.state === 'STARTED') {
         emptyEl.innerHTML = `
             <div class="flex flex-col items-center gap-4">
@@ -267,16 +299,14 @@
         return;
       }
 
+      // Job is finished (SUCCESS or FAILURE with result on disk)
       allClips = data.result?.clips || [];
       clipCountEl.textContent = allClips.length;
 
-      if (allClips.length === 0) {
-        emptyEl.innerHTML = `
-            <i class="fa-solid fa-film text-4xl mb-4 opacity-20"></i>
-            <p>No clips found.</p>
-        `;
-        emptyEl.classList.remove('hidden');
-        clipsList.innerHTML = '';
+      // If there are no clips for this job, treat it as an empty project and
+      // send the user back to the Projects page instead of showing a loader
+      if (!allClips.length) {
+        window.location.href = '/app/projects';
         return;
       }
 
@@ -323,7 +353,7 @@
       const thumb = clip.thumbnail_url || clip.thumbnail || '';
 
       div.innerHTML = `
-        <div class="relative aspect-video bg-black/70 overflow-hidden cursor-pointer rounded-xl ${highlightQuery ? 'ring-1 ring-green-500/60' : ''}">
+        <div class="relative aspect-video bg-black/70 overflow-hidden cursor-pointer rounded-xl ${highlightQuery ? 'ring-1 ring-green-500/60' : ''}" style="aspect-ratio: 16 / 9;">
 
             ${thumb ? `
             <img src="${thumb}" alt="${titleText.replace(/"/g, '&quot;')}" class="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-200" />

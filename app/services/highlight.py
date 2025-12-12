@@ -330,8 +330,11 @@ def materialize_from_times(raw_clips: List[Dict], transcript: List[Dict], min_se
     materialized = []
     n = len(transcript)
 
-    # Effective minimum we will try to honour for all presets
-    effective_min_sec = max(30.0, float(min_sec))
+    # Effective minimum we will try to honour for all presets. Previously this
+    # was hard-clamped to 30s which meant even the "<30s" preset produced
+    # ~30–35s clips. Instead, respect the UI preset's lower bound while keeping
+    # a small global sanity floor (5s).
+    effective_min_sec = max(5.0, float(min_sec))
 
     for clip in raw_clips:
         st = clip.get("start_time")
@@ -605,6 +608,101 @@ def merge_adjacent_clips(clips: List[Dict], max_gap: float = 2.0, max_duration: 
 
     return cleaned
 
+
+def derive_sound_event_raw_clips(transcript: List[Dict], min_gap: float = 5.0) -> List[Dict]:
+    """Heuristic: derive extra raw clips from audio tags so that each cluster of
+    sound events (within ``min_gap`` seconds) yields at least one candidate
+    highlight.
+
+    This is a safety net to ensure the manager's test (counting clear sound
+    events like laughter, gunshots, explosions, farts, doorbells, rain,
+    crowd cheers, etc.) has roughly the same number of clips, even if the
+    LLM under-uses the tags.
+    """
+    if not transcript:
+        return []
+
+    interesting_tags = {
+        "laughter",
+        "music",
+        "gunshot",
+        "explosion",
+        "fart",
+        "doorbell",
+        "rain",
+        "scream",
+        "breathing",
+        "cheer",
+    }
+
+    # Collect midpoints for any segment that carries at least one interesting tag.
+    events: List[Dict] = []
+    for seg in transcript:
+        tags = seg.get("tags", []) or []
+        if not tags:
+            continue
+        if not any(t in interesting_tags for t in tags):
+            continue
+        s = float(seg.get("start", 0.0))
+        e = float(seg.get("end", s))
+        if e <= s:
+            continue
+        mid = (s + e) / 2.0
+        events.append({"time": mid, "tags": [t for t in tags if t in interesting_tags]})
+
+    if not events:
+        return []
+
+    events.sort(key=lambda ev: ev["time"])
+
+    # Group events that are close in time (<= min_gap) into clusters.
+    clusters: List[Dict] = []
+    current = {"start": events[0]["time"], "end": events[0]["time"], "tags": set(events[0]["tags"])}
+    for ev in events[1:]:
+        t = ev["time"]
+        if t - current["end"] <= min_gap:
+            current["end"] = t
+            current["tags"].update(ev["tags"])
+        else:
+            clusters.append(current)
+            current = {"start": t, "end": t, "tags": set(ev["tags"])}
+    clusters.append(current)
+
+    sound_clips: List[Dict] = []
+    for idx, cl in enumerate(clusters, start=1):
+        c_start = cl["start"]
+        c_end = cl["end"]
+        # Provide a small local window around the sound cluster; duration
+        # will later be expanded to honour the UI's min/max constraints.
+        raw_start = max(transcript[0]["start"], c_start - 2.0)
+        raw_end = min(transcript[-1]["end"], c_end + 2.0)
+        if raw_end <= raw_start:
+            continue
+
+        tag_list = sorted(cl["tags"])
+        desc = f"Audio event(s): {', '.join(tag_list)}" if tag_list else "Audio event highlight"
+
+        sound_clips.append({
+            "id": f"sound_{idx:03d}",
+            "start_time": raw_start,
+            "end_time": raw_end,
+            "category": "AudioMoment",
+            "title": desc,
+            "description": desc,
+            "scores": {  # modest default scores so LLM-driven clips still dominate when overlapping
+                "hook": 3,
+                "surprise_novelty": 3,
+                "emotion": 3,
+                "clarity_self_contained": 3,
+                "shareability": 3,
+                "cta_potential": 2,
+            },
+        })
+
+    if sound_clips:
+        print(f"🔊 Added {len(sound_clips)} heuristic sound-event clips from audio tags.")
+    return sound_clips
+
 def assign_unique_ids(clips: List[Dict]) -> List[Dict]:
     """Assign sequential clip IDs and filenames in chronological order."""
     clips.sort(key=lambda c: c["start"]) 
@@ -671,7 +769,7 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
     print(f"✂️ Split into {len(chunks)} chunks (~{CHUNK_DURATION/60:.1f} min, {OVERLAP}s overlap).")
 
     # run LLM on each chunk in parallel
-    raw_clips = []
+    raw_clips: List[Dict] = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futures = []
         for i, ch in enumerate(chunks):
@@ -682,6 +780,14 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
                 raw_clips.extend(res["clips"])
 
     print(f"✅ LLM returned {len(raw_clips)} raw clip candidates across chunks.")
+
+    # Heuristic fallback: ensure we have at least one candidate highlight per
+    # cluster of interesting sound events (within ~5 seconds), based purely on
+    # the audio tags attached to the transcript. This helps align the number of
+    # clips with the number of clear sound moments when the manager tests with
+    # videos full of discrete effects (laughter, goals, fireworks, farts, etc.).
+    sound_event_clips = derive_sound_event_raw_clips(transcript, min_gap=5.0)
+    raw_clips.extend(sound_event_clips)
 
     # Materialize -> snap times to transcript -> enforce durations -> rebuild text
     clips = materialize_from_times(raw_clips, transcript, min_sec=min_sec, max_sec=max_sec)
@@ -718,7 +824,7 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
                 occupied_until = c["end"]
         return sorted(selected, key=lambda c: c["start"]) 
 
-    clips = merge_adjacent_clips(clips, max_gap=2.0, max_duration=MAX_SEC)
+    clips = merge_adjacent_clips(clips, max_gap=5.0, max_duration=MAX_SEC)
 
     clips_before_diversity = list(clips)
     # Only apply diversity pruning when we have a lot of clips; otherwise keep

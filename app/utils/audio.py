@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import List, Tuple, Dict, Union
+import os
 import math
 import numpy as np
 import librosa
@@ -58,12 +59,27 @@ def transcribe_chunks(chunks: List[Union[ChunkEntry, Path, str]], model_size: st
     [{"start": float, "end": float, "word": str}, ...] which can be used
     later for more precise karaoke-style subtitles.
     """
-    model = WhisperModel(model_size)
+    # Allow overriding the default model via environment so we can run a
+    # stronger model (e.g. "medium" or "large") in production without
+    # changing code.
+    env_model = os.getenv("TRANSCRIBE_MODEL")
+    effective_model = env_model or model_size or "medium"
+
+    model = WhisperModel(effective_model)
     results = []
     full_text_parts: List[str] = []
     for i, raw_entry in enumerate(chunks):
         wav_path, chunk_start = _resolve_chunk_entry(raw_entry, default_start=0.0)
-        segments, _ = model.transcribe(str(wav_path), word_timestamps=True)
+
+        # Use accuracy‑oriented decoding: beam search and a low temperature so
+        # subtitles (especially music/lyrics) are as faithful as possible.
+        segments, _ = model.transcribe(
+            str(wav_path),
+            word_timestamps=True,
+            beam_size=5,
+            best_of=5,
+            temperature=0.2,
+        )
         try:
             import soundfile as _sf
             f = _sf.SoundFile(str(wav_path))

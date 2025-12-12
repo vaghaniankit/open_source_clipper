@@ -106,6 +106,26 @@ async def step_source_post(
     if youtube_url and youtube_url.strip():
         draft["source_type"] = "youtube"
         draft["source_url"] = youtube_url.strip()
+
+        # Try to probe YouTube metadata (duration) without downloading the video,
+        # so we can show an accurate processing timeframe later.
+        try:
+            import yt_dlp
+
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "skip_download": True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(draft["source_url"], download=False)
+            dur = info.get("duration")
+            if isinstance(dur, (int, float)) and dur > 0:
+                draft["video_duration_seconds"] = float(dur)
+        except Exception:
+            # If yt_dlp probing fails for any reason, just continue without
+            # duration; the prompt step will fall back to a generic label.
+            pass
     elif video_file and video_file.filename:
         # Save file temporarily
         file_id = str(uuid.uuid4())
@@ -159,29 +179,45 @@ def step_prompt_get(request: Request):
     draft = request.session.get("job_draft", {})
     video_duration_label = None
 
-    source_type = draft.get("source_type")
-    if source_type == "upload":
-        local_path = draft.get("local_path")
-        if local_path and Path(local_path).exists():
-            try:
-                probe = subprocess.run([
-                    "ffprobe",
-                    "-v",
-                    "error",
-                    "-show_entries",
-                    "format=duration",
-                    "-of",
-                    "default=noprint_wrappers=1:nokey=1",
-                    local_path,
-                ], capture_output=True, text=True, check=False)
-                total_dur = float(probe.stdout.strip() or 0) if probe.stdout else 0.0
-                if total_dur > 0:
-                    hours = int(total_dur // 3600)
-                    minutes = int((total_dur % 3600) // 60)
-                    seconds = int(total_dur % 60)
-                    video_duration_label = f"{hours:01d}:{minutes:02d}:{seconds:02d}"
-            except Exception:
-                video_duration_label = None
+    # 1) If we already know the duration in seconds (e.g. from YouTube
+    # metadata), prefer that.
+    dur_seconds = draft.get("video_duration_seconds")
+    if isinstance(dur_seconds, (int, float)) and dur_seconds > 0:
+        try:
+            total_dur = float(dur_seconds)
+            hours = int(total_dur // 3600)
+            minutes = int((total_dur % 3600) // 60)
+            seconds = int(total_dur % 60)
+            video_duration_label = f"{hours:01d}:{minutes:02d}:{seconds:02d}"
+        except Exception:
+            video_duration_label = None
+
+    # 2) If we don't have duration yet and this is an uploaded file, probe it
+    # with ffprobe using the temporary local_path saved in the draft.
+    if video_duration_label is None:
+        source_type = draft.get("source_type")
+        if source_type == "upload":
+            local_path = draft.get("local_path")
+            if local_path and Path(local_path).exists():
+                try:
+                    probe = subprocess.run([
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-show_entries",
+                        "format=duration",
+                        "-of",
+                        "default=noprint_wrappers=1:nokey=1",
+                        local_path,
+                    ], capture_output=True, text=True, check=False)
+                    total_dur = float(probe.stdout.strip() or 0) if probe.stdout else 0.0
+                    if total_dur > 0:
+                        hours = int(total_dur // 3600)
+                        minutes = int((total_dur % 3600) // 60)
+                        seconds = int(total_dur % 60)
+                        video_duration_label = f"{hours:01d}:{minutes:02d}:{seconds:02d}"
+                except Exception:
+                    video_duration_label = None
 
     return templates.TemplateResponse("step_prompt.html", {
         "request": request,

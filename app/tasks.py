@@ -7,6 +7,9 @@ from typing import Optional
 
 from .celery_app import celery_app
 
+# Default transcription model can be overridden via TRANSCRIBE_MODEL env var
+DEFAULT_TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "medium")
+
 # Simple tasks. Replace with real implementations / orchestrator later.
 
 @celery_app.task(bind=True)
@@ -75,7 +78,7 @@ def orchestrate_pipeline_task(
     path: str,
     chunk_seconds: int = 30,
     overlap_seconds: int = 2,
-    model_size: str = "base",
+    model_size: str = DEFAULT_TRANSCRIBE_MODEL,
     prompt: Optional[str] = None,
     duration_preset: Optional[str] = None,
     timeframe_percent: Optional[int] = None,

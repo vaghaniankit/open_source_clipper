@@ -29,7 +29,11 @@
             <div class="space-y-4">
                 <div class="flex items-center justify-between">
                     <label class="text-xs font-bold text-gray-400 uppercase tracking-wider">Processing timeframe</label>
-                    <span class="text-xs text-gray-500">0:00:00 - {{ video_duration_label or 'full video' }}</span>
+                    {% if video_duration_label %}
+                    <span class="text-xs text-gray-500">0:00:00 - {{ video_duration_label }}</span>
+                    {% else %}
+                    <span class="text-xs text-gray-500">0:00:00 - full video</span>
+                    {% endif %}
                 </div>
 
                 <div class="relative h-2 bg-[#1a1a1a] rounded-full">
@@ -49,7 +53,11 @@
 
                 <div class="flex justify-between text-[10px] text-gray-600 font-mono">
                     <span>0:00:00</span>
-                    <span>{{ video_duration_label or 'full video' }}</span>
+                    {% if video_duration_label %}
+                    <span>{{ video_duration_label }}</span>
+                    {% else %}
+                    <span>full video</span>
+                    {% endif %}
                 </div>
             </div>
 

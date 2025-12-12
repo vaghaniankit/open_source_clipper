@@ -148,11 +148,30 @@ def _analyze_audio_events_yamnet(audio_path: str) -> List[Dict]:
         idx = int(np.argmax(row))
         name = class_names[idx] if 0 <= idx < len(class_names) else ""
         name_lower = name.lower()
+
+        # Map YAMNet's rich label space into a smaller set of tags we care
+        # about for highlight selection.
         label = "none"
         if "laughter" in name_lower or "giggle" in name_lower or "chuckle" in name_lower:
             label = "laughter"
-        elif "music" in name_lower or "singing" in name_lower:
+        elif "music" in name_lower or "singing" in name_lower or "choir" in name_lower:
             label = "music"
+        elif "gunshot" in name_lower or "gun fire" in name_lower or "machine gun" in name_lower:
+            label = "gunshot"
+        elif "explosion" in name_lower or "burst" in name_lower or "fireworks" in name_lower:
+            label = "explosion"
+        elif "fart" in name_lower or "flatulence" in name_lower:
+            label = "fart"
+        elif "doorbell" in name_lower or "knock" in name_lower:
+            label = "doorbell"
+        elif "rain" in name_lower or "thunderstorm" in name_lower:
+            label = "rain"
+        elif "scream" in name_lower or "shout" in name_lower or "yell" in name_lower:
+            label = "scream"
+        elif "breath" in name_lower or "breathing" in name_lower:
+            label = "breathing"
+        elif "cheer" in name_lower or "applause" in name_lower or "crowd" in name_lower:
+            label = "cheer"
         labels.append(label)
 
     return _frame_events_from_labels(times, labels)
@@ -246,14 +265,27 @@ def compute_excitement_score(segments: List[Dict]) -> List[Dict]:
         near_cut = bool(seg.get("near_cut", False))
         tags = seg.get("tags", []) or []
 
-        tag_bonus = 0.0
-        if "laughter" in tags:
-            tag_bonus += 0.3
-        if "music" in tags:
-            tag_bonus += 0.2
-
+        # Base excitement from normalised energy
         base = 0.5 * energy_norm
+
+        # Small bonus if the segment is aligned with a scene cut
         cut_bonus = 0.2 if near_cut else 0.0
+
+        # Tag-driven bonus: any non-"none" tag gives a small bump, and
+        # certain high-salience tags give additional weight.
+        tag_bonus = 0.0
+        exciting_tags = {"laughter", "scream", "gunshot", "explosion", "cheer"}
+        neutral_tags = {"music", "fart", "doorbell", "rain", "breathing"}
+
+        for t in tags:
+            if not t or t == "none":
+                continue
+            if t in exciting_tags:
+                tag_bonus += 0.2
+            elif t in neutral_tags:
+                tag_bonus += 0.1
+            else:
+                tag_bonus += 0.05
 
         excitement = base + cut_bonus + tag_bonus
         if excitement > 1.0:

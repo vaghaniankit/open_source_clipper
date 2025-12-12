@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import shutil
+import subprocess
 from typing import List
 
 from fastapi import APIRouter, HTTPException, Body
@@ -30,6 +31,71 @@ def _status_for_job(job_id: str):
     return async_result, info, progress
 
 
+def _ensure_clip_thumbnails(job_id: str, highlights: dict) -> dict:
+    """Ensure each clip in highlights.json has a thumbnail_url.
+
+    This is primarily used when re-opening jobs from the Projects page: older
+    jobs may have been created before thumbnail generation was added, so we
+    lazily generate thumbs here based on the stored video_path and clip start
+    times.
+    """
+    clips = highlights.get("clips") or []
+    if not clips:
+        return highlights
+
+    video_path = highlights.get("video_path")
+    if not video_path or not Path(video_path).exists():
+        return highlights
+
+    job_exports_dir = STORAGE_DIR / "exports" / job_id / "thumbs"
+    job_exports_dir.mkdir(parents=True, exist_ok=True)
+
+    changed = False
+    for clip in clips:
+        if clip.get("thumbnail_url"):
+            continue
+
+        clip_id = clip.get("id") or "clip"
+        try:
+            start = float(clip.get("start", 0.0) or 0.0)
+        except Exception:
+            start = 0.0
+        start = max(0.0, start)
+
+        thumb_name = f"{clip_id}.jpg"
+        thumb_path = job_exports_dir / thumb_name
+
+        if not thumb_path.exists():
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                str(start),
+                "-i",
+                str(video_path),
+                "-vframes",
+                "1",
+                "-q:v",
+                "3",
+                str(thumb_path),
+            ]
+            try:
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                continue
+
+        try:
+            rel = thumb_path.relative_to(STORAGE_DIR)
+            clip["thumbnail_url"] = f"/media/{rel.as_posix()}"
+            changed = True
+        except Exception:
+            continue
+
+    if changed:
+        highlights["clips"] = clips
+    return highlights
+
+
 @router.get("/{job_id}")
 def job_status(job_id: str):
     async_result, info, progress = _status_for_job(job_id)
@@ -47,12 +113,21 @@ def job_status(job_id: str):
         progress = 100
         try:
             highlights = json.loads(highlights_path.read_text(encoding="utf-8"))
+            highlights = _ensure_clip_thumbnails(job_id, highlights)
+
             # Construct result similar to what task returns
             result = {
                 "job_id": job_id,
                 "clips": highlights.get("clips", []),
                 "highlights_path": str(highlights_path)
             }
+
+            # Persist any new thumbnail_url fields back to disk so future
+            # requests do not need to regenerate them.
+            try:
+                highlights_path.write_text(json.dumps(highlights, indent=2), encoding="utf-8")
+            except Exception:
+                pass
         except Exception:
             # If read fails, stick to Celery status
             pass
