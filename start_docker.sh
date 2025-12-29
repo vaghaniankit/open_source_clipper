@@ -1,9 +1,22 @@
 #!/bin/bash
 # This script is to be run on the HOST machine
+
+# Stop all running containers
+echo "Stopping all running containers..."
+docker stop $(docker ps -aq)
+
+# Prune the system
+echo "Pruning Docker system..."
+docker system prune -af
+
 # Ensure nvidia-docker2 is installed
 
-echo "Installing nvidia-docker2 (if not already installed)..."
-sudo apt-get install -y nvidia-docker2
+if ! dpkg -l | grep -q nvidia-docker2; then
+  echo "Installing nvidia-docker2..."
+  sudo apt-get install -y nvidia-docker2
+else
+  echo "nvidia-docker2 is already installed."
+fi
 
 # Restart docker to ensure NVIDIA toolkit is active
 echo "Restarting Docker to activate NVIDIA Docker Toolkit..."
