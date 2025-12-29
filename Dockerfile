@@ -37,7 +37,5 @@ COPY --chown=user:user . .
 # Expose the port
 EXPOSE 8000
 
-RUN which gunicorn
-
 # Set the entrypoint
 CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
