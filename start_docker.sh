@@ -13,6 +13,10 @@ sudo systemctl restart docker
 echo "Building Docker images with docker-compose (production config)..."
 docker compose -f docker-compose.prod.yml build
 
+# Fix storage permissions
+echo "Fixing storage permissions..."
+sudo chown -R 1000:1000 ./storage
+
 # Start the services
 echo "Starting services using docker-compose..."
 docker compose -f docker-compose.prod.yml up -d
