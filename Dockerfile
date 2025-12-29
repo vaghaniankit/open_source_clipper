@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set up a non-root user
 RUN useradd -m -u 1000 user
 USER user
+ENV PATH="/home/user/.local/bin:${PATH}"
 ENV HOME=/home/user
 WORKDIR /home/user/app
 
@@ -38,5 +39,4 @@ COPY --chown=user:user . .
 EXPOSE 8000
 
 # Set the entrypoint
-ENTRYPOINT ["/usr/local/bin/gunicorn"]
-CMD ["-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
