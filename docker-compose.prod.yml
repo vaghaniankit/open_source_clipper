@@ -1,7 +1,9 @@
 version: "3.8"
 
 services:
+    # web: Main FastAPI web application (serves API and web frontend)
     web:
+        container_name: open_source_clipper_web
         build: .
         ports:
             - "8000:8000"
@@ -13,7 +15,9 @@ services:
         depends_on:
             - redis
 
+    # worker: Celery GPU worker for processing GPU-accelerated tasks from the queue
     worker:
+        container_name: open_source_clipper_worker
         build: .
         command: celery -A app.celery_app worker -l info -Q gpu_tasks -c 1
         volumes:
@@ -31,7 +35,9 @@ services:
         depends_on:
             - redis
 
+    # cpu_worker: Celery worker for CPU-only tasks (does not require GPU)
     cpu_worker:
+        container_name: open_source_clipper_cpu_worker
         build: .
         command: celery -A app.celery_app worker -l info -Q cpu_tasks
         volumes:
@@ -42,7 +48,9 @@ services:
         depends_on:
             - redis
 
+    # beat: Celery Beat scheduler for scheduled/background tasks
     beat:
+        container_name: open_source_clipper_beat
         build: .
         command: celery -A app.celery_app beat -l info
         volumes:
@@ -53,7 +61,9 @@ services:
         depends_on:
             - redis
 
+    # redis: Redis message broker for Celery and backend
     redis:
+        container_name: open_source_clipper_redis
         image: "redis:7-alpine"
         restart: unless-stopped
         volumes:
