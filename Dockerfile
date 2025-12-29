@@ -23,16 +23,21 @@ ENV HOME=/home/user
 WORKDIR /home/user/app
 
 # Copy the requirements file
-COPY --chown=user:user requirements.txt .
+COPY --chown=user:user requirements.in .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python3 -m pip install --upgrade pip
+RUN pip install --no-cache-dir pip-tools
+RUN python3 -m piptools compile requirements.in
+RUN python3 -m piptools sync requirements.txt
 
 # Copy the application code
 COPY --chown=user:user . .
 
 # Expose the port
 EXPOSE 8000
+
+RUN which gunicorn
 
 # Set the entrypoint
 CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
