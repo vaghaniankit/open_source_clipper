@@ -3,6 +3,7 @@ version: "3.8"
 services:
     # web: This service runs your main web application. When a user initiates a long-running process (like exporting a video), the web service creates a "task" and puts it into a queue.
     web:
+        container_name: open_source_clipper_web
         build: .
         command: gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 app.main:app
         volumes:
@@ -18,6 +19,7 @@ services:
 
     # worker: This service, the Celery worker, constantly monitors the Redis queue. When a new task appears, the worker picks it up and executes it in the background. This prevents the web application from freezing while waiting for heavy jobs to complete.
     worker:
+        container_name: open_source_clipper_worker
         build: .
         command: celery -A app.celery_app worker --loglevel=info
         volumes:
@@ -31,6 +33,7 @@ services:
 
     # beat: This is the Celery scheduler. It doesn't execute tasks itself. Instead, its job is to send tasks to the Redis queue based on a predefined schedule. For example, you could configure a task to run every hour, every day at midnight, or every Monday morning.
     beat:
+        container_name: open_source_clipper_beat
         build: .
         command: celery -A app.celery_app beat --loglevel=info
         volumes:
@@ -44,6 +47,7 @@ services:
 
     # redis: This acts as the message broker, holding the queue of tasks that need to be processed.
     redis:
+        container_name: open_source_clipper_redis
         image: redis:7-alpine
         ports:
             - "6379:6379"

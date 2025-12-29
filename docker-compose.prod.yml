@@ -3,6 +3,7 @@ version: "3.8"
 services:
     # web: Main FastAPI app (serves HTTP requests).
     web:
+        container_name: open_source_clipper_web
         build: .
         ports:
             - "8000:8000"
@@ -16,6 +17,7 @@ services:
 
     # worker: Celery worker for all background tasks.
     worker:
+        container_name: open_source_clipper_worker
         build: .
         command: celery -A app.celery_app worker -l info
         volumes:
@@ -28,6 +30,7 @@ services:
 
     # beat: Celery beat scheduler (periodic task scheduler).
     beat:
+        container_name: open_source_clipper_beat
         build: .
         command: celery -A app.celery_app beat -l info
         volumes:
@@ -40,6 +43,7 @@ services:
 
     # redis: Redis server for broker/results backend.
     redis:
+        container_name: open_source_clipper_redis
         image: "redis:7-alpine"
         restart: unless-stopped
         volumes:

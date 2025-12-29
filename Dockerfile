@@ -22,6 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Set up a non-root user
 RUN useradd -m -u 1000 user
+
+# Set up the entrypoint
+COPY --chown=user:user ./docker/docker-entrypoint.sh /home/user/app/docker-entrypoint.sh
+RUN chmod +x /home/user/app/docker-entrypoint.sh
 USER user
 ENV HOME=/home/user
 WORKDIR /home/user/app
@@ -32,6 +36,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY --chown=user:user . .
+
+# Set up the entrypoint
+RUN chmod +x /home/user/app/docker-entrypoint.sh
+ENTRYPOINT ["/home/user/app/docker-entrypoint.sh"]
 
 # Expose the port that gunicorn will run on
 EXPOSE 8000
