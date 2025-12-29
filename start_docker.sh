@@ -1,6 +1,10 @@
 #!/bin/bash
 # This script is to be run on the HOST machine
 
+# List all Docker images
+echo "Listing all Docker images before starting..."
+docker images -a
+
 # Stop all running containers
 echo "Stopping all running containers..."
 docker stop $(docker ps -aq)
@@ -35,3 +39,6 @@ echo "Starting services using docker-compose..."
 docker compose -f docker-compose.prod.yml up -d
 
 echo "All steps completed. Services should be running."
+
+echo "Listing all Docker images..."
+docker images -a
