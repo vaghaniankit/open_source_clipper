@@ -1,3 +1,4 @@
+import os
 from typing import List, Dict, Tuple
 
 import numpy as np
@@ -7,6 +8,10 @@ import tensorflow_hub as hub
 
 from scenedetect import VideoManager, SceneManager
 from scenedetect.detectors import ContentDetector
+
+# Feature flag to enable/disable non-speech detection
+enable_non_speech_detection = os.getenv("ENABLE_NON_SPEECH_DETECTION", "true").lower() == "true"
+
 
 
 def detect_scene_cuts(video_path: str, threshold: float = 27.0) -> List[float]:
@@ -145,34 +150,58 @@ def _analyze_audio_events_yamnet(audio_path: str) -> List[Dict]:
         if row.size == 0:
             labels.append("none")
             continue
-        idx = int(np.argmax(row))
-        name = class_names[idx] if 0 <= idx < len(class_names) else ""
-        name_lower = name.lower()
+        
+        # Get top 5 scores and their indices
+        top_indices = np.argsort(row)[-5:]
+        top_scores = row[top_indices]
+        
+        detected_labels = []
+        for idx, score in zip(top_indices, top_scores):
+            print('\n\n➡ app/utils/analysis.py:161 score:', score)
+            if score < 0.05:  # Confidence threshold
+                continue
+            
+            name = class_names[idx] if 0 <= idx < len(class_names) else ""
+            name_lower = name.lower()
+            
+            # Map YAMNet's rich label space into a smaller set of tags
+            print('\n\n➡ app/utils/analysis.py:168 enable_non_speech_detection:', enable_non_speech_detection)
+            print('\n\n➡ app/utils/analysis.py:170 name_lower:', name_lower)
+            if enable_non_speech_detection:
+                if "laughter" in name_lower or "giggle" in name_lower or "chuckle" in name_lower:
+                    detected_labels.append("laughter")
+                elif "music" in name_lower or "singing" in name_lower or "choir" in name_lower:
+                    detected_labels.append("music")
+                elif "gunshot" in name_lower or "gun fire" in name_lower or "machine gun" in name_lower:
+                    detected_labels.append("gunshot")
+                elif "explosion" in name_lower or "burst" in name_lower or "fireworks" in name_lower:
+                    detected_labels.append("explosion")
+                elif "fart" in name_lower or "flatulence" in name_lower:
+                    detected_labels.append("fart")
+                elif "doorbell" in name_lower or "knock" in name_lower:
+                    detected_labels.append("doorbell")
+                elif "rain" in name_lower or "thunderstorm" in name_lower:
+                    detected_labels.append("rain")
+                elif "scream" in name_lower or "shout" in name_lower or "yell" in name_lower:
+                    detected_labels.append("scream")
+                elif "breath" in name_lower or "breathing" in name_lower:
+                    detected_labels.append("breathing")
+                elif "cheer" in name_lower or "applause" in name_lower or "crowd" in name_lower:
+                    detected_labels.append("cheer")
+                elif "crying" in name_lower or "sobbing" in name_lower:
+                    detected_labels.append("crying")
+                elif "emotional" in name_lower or "affective" in name_lower:
+                    detected_labels.append("emotional reaction")
 
-        # Map YAMNet's rich label space into a smaller set of tags we care
-        # about for highlight selection.
-        label = "none"
-        if "laughter" in name_lower or "giggle" in name_lower or "chuckle" in name_lower:
-            label = "laughter"
-        elif "music" in name_lower or "singing" in name_lower or "choir" in name_lower:
-            label = "music"
-        elif "gunshot" in name_lower or "gun fire" in name_lower or "machine gun" in name_lower:
-            label = "gunshot"
-        elif "explosion" in name_lower or "burst" in name_lower or "fireworks" in name_lower:
-            label = "explosion"
-        elif "fart" in name_lower or "flatulence" in name_lower:
-            label = "fart"
-        elif "doorbell" in name_lower or "knock" in name_lower:
-            label = "doorbell"
-        elif "rain" in name_lower or "thunderstorm" in name_lower:
-            label = "rain"
-        elif "scream" in name_lower or "shout" in name_lower or "yell" in name_lower:
-            label = "scream"
-        elif "breath" in name_lower or "breathing" in name_lower:
-            label = "breathing"
-        elif "cheer" in name_lower or "applause" in name_lower or "crowd" in name_lower:
-            label = "cheer"
-        labels.append(label)
+        # Prioritize laughter if both music and laughter are detected
+        if "laughter" in detected_labels:
+            labels.append("laughter")
+        elif "music" in detected_labels:
+            labels.append("music")
+        elif detected_labels:
+            labels.append(detected_labels[0]) # take the first one if no priority
+        else:
+            labels.append("none")
 
     return _frame_events_from_labels(times, labels)
 
@@ -266,10 +295,10 @@ def compute_excitement_score(segments: List[Dict]) -> List[Dict]:
         tags = seg.get("tags", []) or []
 
         # Base excitement from normalised energy
-        base = 0.5 * energy_norm
+        base = 0.6 * energy_norm
 
         # Small bonus if the segment is aligned with a scene cut
-        cut_bonus = 0.2 if near_cut else 0.0
+        cut_bonus = 0.3 if near_cut else 0.0
 
         # Tag-driven bonus: any non-"none" tag gives a small bump, and
         # certain high-salience tags give additional weight.
@@ -281,9 +310,9 @@ def compute_excitement_score(segments: List[Dict]) -> List[Dict]:
             if not t or t == "none":
                 continue
             if t in exciting_tags:
-                tag_bonus += 0.2
+                tag_bonus += 0.3
             elif t in neutral_tags:
-                tag_bonus += 0.1
+                tag_bonus += 0.15
             else:
                 tag_bonus += 0.05
 

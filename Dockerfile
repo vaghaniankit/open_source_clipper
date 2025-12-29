@@ -2,44 +2,39 @@
 FROM python:3.10-slim
 
 # Set environment variables
+
+# Prevent Python from writing .pyc files to disk (makes containers lighter and often unnecessary in production)
 ENV PYTHONDONTWRITEBYTECODE=1
+
+# Ensure output is sent straight to terminal (useful for Docker logs, avoids buffering)
 ENV PYTHONUNBUFFERED=1
 
+# Avoids interactive prompts during OS-level package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install system dependencies
-# ffmpeg: for video processing
-# libsndfile1: for audio processing (librosa)
-# git: if needed for installing dependencies from git
-# redis-server: Celery broker/backend
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
+    libgl1 \
     git \
-    redis-server \
     && rm -rf /var/lib/apt/lists/*
 
-# Set work directory
-WORKDIR /app
+# Set up a non-root user
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user
+WORKDIR /home/user/app
 
-# Install Python dependencies
-COPY requirements.txt .
-ENV PIP_DEFAULT_TIMEOUT=900
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir supervisor itsdangerous
+# Copy the requirements file and install dependencies
+COPY --chown=user:user requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy project
-COPY . .
+# Copy the application code
+COPY --chown=user:user . .
 
-# Create storage directories
-RUN mkdir -p storage/videos storage/audio storage/pipeline storage/exports storage/data downloads
-
-# Expose the port
+# Expose the port that gunicorn will run on
 EXPOSE 8000
 
-# Copy supervisor config
-COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
-
-ENV REDIS_URL=redis://localhost:6379/0 \
-    REDIS_BACKEND=redis://localhost:6379/0
-
-# Command to run the application stack (Redis + Celery worker + Celery beat + Uvicorn)
-CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+# Command to run the application
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "app.main:app"]

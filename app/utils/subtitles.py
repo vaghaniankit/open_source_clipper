@@ -40,13 +40,16 @@ MIN_WORD_CONFIDENCE = 0.35  # suppress hallucinated words when Whisper is unsure
 VERY_LOW_ENERGY = 0.004  # only this low is treated as near-silence for word-level suppression
 
 
-def build_clip_srt(segments: List[Dict], clip_start: float, clip_end: float, clip: Dict | None = None) -> str:
-    """Build an SRT subtitle track for a clip using **word-level** timings.
-
-    - Prefer the exact transcript slice corresponding to the clip's
-      start_idx/end_idx when available.
-    - Flatten words from those segments and group them into short
-      time windows so captions follow the speech closely.
+def build_clip_srt_and_ass(
+    segments: List[Dict], 
+    clip_start: float, 
+    clip_end: float, 
+    clip: Dict | None = None,
+    highlight_color: str = "&H0000FF&"     # Red
+) -> (str, str):
+    """Build SRT (for burnt-in display) and ASS (for karaoke effect) subtitle tracks.
+    - SRT will contain full sentences.
+    - ASS will contain word-by-word highlighting.
     """
     # Decide which segments to consider: use clip's index range if present.
     chosen_segments: List[Dict]
@@ -62,12 +65,11 @@ def build_clip_srt(segments: List[Dict], clip_start: float, clip_end: float, cli
     else:
         chosen_segments = segments
 
-    # Ensure segments are processed in chronological order; some upstream
-    # generators emit overlapping chunks out of time order.
+    # Ensure segments are processed in chronological order
     chosen_segments = sorted(chosen_segments, key=lambda s: float(s.get("start", 0.0)))
 
-    # Collect words inside the clip window
-    word_windows = []
+    # Collect all words and tags within the clip's time window
+    all_items = []
     for seg in chosen_segments:
         try:
             seg_start = float(seg.get("start", 0.0))
@@ -77,29 +79,8 @@ def build_clip_srt(segments: List[Dict], clip_start: float, clip_end: float, cli
         if seg_end <= clip_start or seg_start >= clip_end:
             continue
 
-        seg_energy = float(seg.get("energy", 0.0) or 0.0)
+        # Add words
         words = seg.get("words") or []
-        if not words:
-            # fallback: use the whole segment text
-            text = (seg.get("text") or "").strip()
-            if not text:
-                continue
-            # For segments without word timings, only drop if energy is extremely low
-            if seg_energy < VERY_LOW_ENERGY:
-                continue
-            # Clamp segment to the clip window and convert to *relative* times so
-            # subtitles line up with the cut clip rather than the full video.
-            s_abs = max(seg_start, clip_start)
-            e_abs = min(seg_end, clip_end)
-            if e_abs <= s_abs:
-                continue
-            s_rel = s_abs - clip_start
-            e_rel = e_abs - clip_start
-            if e_rel <= s_rel:
-                continue
-            word_windows.append({"start": s_rel, "end": e_rel, "text": text})
-            continue
-
         for w in words:
             try:
                 ws = float(w.get("start", seg_start))
@@ -108,83 +89,209 @@ def build_clip_srt(segments: List[Dict], clip_start: float, clip_end: float, cli
                 continue
             if we <= clip_start or ws >= clip_end:
                 continue
-            ws_rel = max(ws, clip_start) - clip_start
-            we_rel = min(we, clip_end) - clip_start
-            if we_rel <= ws_rel:
-                continue
+            
             text = (w.get("word") or "").strip()
             if not text:
                 continue
-            confidence = w.get("confidence")
-            # Only suppress when both energy is extremely low and confidence is low
-            if confidence is not None and seg_energy < VERY_LOW_ENERGY and confidence < MIN_WORD_CONFIDENCE:
-                continue
-            word_windows.append({"start": ws_rel, "end": we_rel, "text": text})
+            
+            all_items.append({
+                "start": ws,
+                "end": we,
+                "text": text,
+                "type": "word"
+            })
 
-    if not word_windows:
-        return ""
+        # Add tags as separate items
+        tags = seg.get("tags") or []
+        if tags:
+            all_items.append({
+                "start": seg_start,
+                "end": seg_end,
+                "text": f"[{', '.join(tags)}]",
+                "type": "tag"
+            })
 
-    # Sort by word start time
-    word_windows.sort(key=lambda w: w["start"])
+    # Sort all items by start time
+    all_items.sort(key=lambda x: x['start'])
+    
+    if not all_items:
+        return "", ""
 
-    # Group consecutive words into very small subtitles so captions follow
-    # the speech word-by-word.
-    MIN_SUB_DURATION = 0.1
-    MAX_SUB_DURATION = 1.0
-    MAX_WORDS_PER_SUB = 1
+    # Assign all_items to all_words for the rest of the function
+    all_words = all_items
 
-    groups = []
-    cur = None
-    for w in word_windows:
-        if cur is None:
-            cur = {"start": w["start"], "end": w["end"], "words": [w["text"]]}
+    # Build SRT content (sentence-level)
+    srt_lines = []
+    srt_idx = 1
+    
+    # Simple sentence segmentation: split by periods, question marks, etc.
+    sentence_ends = {'.', '?', '!'}
+    
+    current_sentence = []
+    sentence_start_time = -1.0
+
+    for i, item in enumerate(all_items):
+        if item["type"] == "tag":
+            if current_sentence:
+                # End the current sentence before the tag
+                full_sentence = " ".join(current_sentence)
+                sentence_end_time = all_items[i-1]["end"]
+                
+                s_rel = max(sentence_start_time, clip_start) - clip_start
+                e_rel = min(sentence_end_time, clip_end) - clip_start
+                
+                if e_rel > s_rel:
+                    start_ts = _format_srt_timestamp(s_rel)
+                    end_ts = _format_srt_timestamp(e_rel)
+                    
+                    srt_lines.append(str(srt_idx))
+                    srt_lines.append(f"{start_ts} --> {end_ts}")
+                    srt_lines.append(_wrap_text(full_sentence))
+                    srt_lines.append("")
+                    srt_idx += 1
+                
+                current_sentence = []
+
+            # Add the tag as a standalone subtitle line
+            s_rel = max(item["start"], clip_start) - clip_start
+            e_rel = min(item["end"], clip_end) - clip_start
+            if e_rel > s_rel:
+                start_ts = _format_srt_timestamp(s_rel)
+                end_ts = _format_srt_timestamp(e_rel)
+                
+                srt_lines.append(str(srt_idx))
+                srt_lines.append(f"{start_ts} --> {end_ts}")
+                srt_lines.append(item["text"])
+                srt_lines.append("")
+                srt_idx += 1
             continue
 
-        proposed_start = cur["start"]
-        proposed_end = max(cur["end"], w["end"])
-        proposed_dur = proposed_end - proposed_start
-        word_count = len(cur["words"]) + 1
+        if not current_sentence:
+            sentence_start_time = item["start"]
+        
+        current_sentence.append(item["text"])
+        
+        is_last_item = (i == len(all_items) - 1)
+        word_text = item["text"]
+        
+        # Check if this word ends a sentence
+        if any(word_text.endswith(p) for p in sentence_ends) or is_last_item:
+            full_sentence = " ".join(current_sentence)
+            sentence_end_time = item["end"]
+            
+            # Align times to clip window
+            s_rel = max(sentence_start_time, clip_start) - clip_start
+            e_rel = min(sentence_end_time, clip_end) - clip_start
+            
+            if e_rel > s_rel:
+                start_ts = _format_srt_timestamp(s_rel)
+                end_ts = _format_srt_timestamp(e_rel)
+                
+                srt_lines.append(str(srt_idx))
+                srt_lines.append(f"{start_ts} --> {end_ts}")
+                srt_lines.append(_wrap_text(full_sentence))
+                srt_lines.append("")
+                srt_idx += 1
+            
+            # Reset for next sentence
+            current_sentence = []
+            sentence_start_time = -1.0
 
-        if proposed_dur <= MAX_SUB_DURATION and word_count <= MAX_WORDS_PER_SUB:
-            cur["end"] = proposed_end
-            cur["words"].append(w["text"])
-        else:
-            if cur["end"] - cur["start"] >= MIN_SUB_DURATION:
-                groups.append(cur)
-            cur = {"start": w["start"], "end": w["end"], "words": [w["text"]]}
+    srt_content = "\n".join(srt_lines)
+    
+    # --- Build ASS content (karaoke-style) ---
+    ass_header = f"""[Script Info]
+Title: Karaoke Subtitles
+ScriptType: v4.00+
+WrapStyle: 0
+PlayResX: 1920
+PlayResY: 1080
 
-    if cur is not None and cur["end"] - cur["start"] >= MIN_SUB_DURATION:
-        groups.append(cur)
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1
 
-    if not groups:
-        return ""
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    ass_lines = [ass_header]
+    
+    # Group words into lines for ASS subtitles
+    ass_lines = [ass_header]
+    line_words = []
+    line_start_time = -1
 
-    # Build SRT entries from word-groups
-    lines: List[str] = []
-    idx = 1
-    for g in groups:
-        text = " ".join(g["words"]).strip()
-        if not text:
-            continue
-        wrapped = _wrap_text(text)
-        if not wrapped:
-            continue
-        start_ts = _format_srt_timestamp(g["start"])
-        end_ts = _format_srt_timestamp(g["end"])
-        lines.append(str(idx))
-        lines.append(f"{start_ts} --> {end_ts}")
-        lines.append(wrapped)
-        lines.append("")
-        idx += 1
+    # Filter out tags for karaoke effect
+    words_only = [item for item in all_items if item["type"] == "word"]
 
-    return "\n".join(lines).strip() + ("\n" if lines else "")
+    for i, word in enumerate(words_only):
+        if line_start_time < 0:
+            line_start_time = word['start']
+
+        line_words.append(word)
+
+        # Check for pause after the current word or if the line is too long
+        is_last_word = (i == len(words_only) - 1)
+        force_break = False
+        if not is_last_word:
+            next_word = words_only[i+1]
+            pause = next_word['start'] - word['end']
+            if pause >= 0.5: # PAUSE_THRESHOLD
+                force_break = True
+        
+        if is_last_word or force_break or len(line_words) >= 8: # MAX_LINE_WORDS
+            # Create a dialogue line for the current group of words
+            line_end_time = line_words[-1]['end']
+            start_ts = _format_ass_timestamp(line_start_time - clip_start)
+            end_ts = _format_ass_timestamp(line_end_time - clip_start)
+            
+            text_line = f"{{\\c{highlight_color}}}"
+            for w in line_words:
+                duration_centiseconds = max(1, int((w["end"] - w["start"]) * 100))
+                text_line += f"{{\\k{duration_centiseconds}}}{w['text']} "
+
+            dialogue = f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{text_line.strip()}"
+            ass_lines.append(dialogue)
+
+            # Reset for the next line
+            line_words = []
+            line_start_time = -1
+
+    # Add any remaining words as a final line
+    if line_words:
+        line_end_time = line_words[-1]['end']
+        start_ts = _format_ass_timestamp(line_start_time - clip_start)
+        end_ts = _format_ass_timestamp(line_end_time - clip_start)
+        
+        text_line = ""
+        for w in line_words:
+            duration_centiseconds = max(1, int((w["end"] - w["start"]) * 100))
+            text_line += f"{{\\k{duration_centiseconds}}}{w['text']} "
+            
+        dialogue = f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{text_line.strip()}"
+        ass_lines.append(dialogue)
+
+    ass_content = "\n".join(ass_lines)
+    
+    return srt_content, ass_content
 
 
-def write_clip_srt(transcript_path: Path, clip: Dict, out_dir: Path) -> Path:
-    """Load transcript.json and write an SRT file for the given clip.
 
-    Returns the path to the written SRT file. If no usable segments, an empty
-    SRT file is still created so ffmpeg has a valid input.
+
+def _format_ass_timestamp(seconds: float) -> str:
+    if seconds < 0:
+        seconds = 0.0
+    millis = int(round(seconds * 1000))
+    hours, rem = divmod(millis, 3600_000)
+    minutes, rem = divmod(rem, 60_000)
+    secs, ms = divmod(rem, 1000)
+    # ASS format is H:MM:SS.cc (centiseconds)
+    return f"{hours:d}:{minutes:02d}:{secs:02d}.{ms // 10:02d}"
+
+
+def write_clip_subtitles(transcript_path: Path, clip: Dict, out_dir: Path) -> (Path, Path):
+    """Load transcript.json and write SRT and ASS files for the given clip.
+    Returns the paths to the written SRT and ASS files.
     """
     import json
 
@@ -193,13 +300,20 @@ def write_clip_srt(transcript_path: Path, clip: Dict, out_dir: Path) -> Path:
     clip_start = float(clip.get("start", 0.0))
     clip_end = float(clip.get("end", 0.0))
     clip_id = clip.get("id") or "clip"
-    srt_name = f"{clip_id}.srt"
+    
     out_dir.mkdir(parents=True, exist_ok=True)
+    srt_name = f"{clip_id}.srt"
+    ass_name = f"{clip_id}.ass"
     srt_path = out_dir / srt_name
+    ass_path = out_dir / ass_name
 
-    srt_text = build_clip_srt(segments, clip_start, clip_end, clip=clip)
+    srt_text, ass_text = build_clip_srt_and_ass(segments, clip_start, clip_end, clip=clip)
+    
     srt_path.write_text(srt_text, encoding="utf-8")
-    return srt_path
+    ass_path.write_text(ass_text, encoding="utf-8")
+    
+    return srt_path, ass_path
+
 
 
 def escape_path_for_ffmpeg(path: str) -> str:
@@ -209,7 +323,7 @@ def escape_path_for_ffmpeg(path: str) -> str:
     - Escape drive colon (C: -> C\:)
     - Wrap in single quotes so spaces are handled.
     """
-    p = path.replace("\\", "/")
+    p = str(path).replace("\\", "/")
     if len(p) >= 2 and p[1] == ":":
         p = p[0] + r"\:" + p[2:]
     return f"'{p}'"

@@ -16,8 +16,8 @@ from ..paths import STORAGE_DIR
 client = OpenAI()
 
 MODEL = "gpt-4o-mini"            # or "gpt-4o" for best accuracy
-TOP_K = 20
-MAX_WORKERS = 4
+TOP_K = 40
+MAX_WORKERS = 2
 OVERLAP = 15.0                   # seconds overlap between chunks
 MIN_SEC = 30.0                   # default minimum highlight length
 MAX_SEC = 90.0                   # default maximum highlight length
@@ -115,74 +115,160 @@ def map_duration_preset(preset: str | None) -> (float, float):
 
 
 # ---------------- PROMPT ----------------
+# SYSTEM_PROMPT = """
+# You are a professional short-form video editor.
+
+# You will be given transcript lines with timestamps and several simple numeric/audio features per line:
+# - energy: number where higher means louder/more intense audio.
+# - scene_id: integer identifying which visual scene the line belongs to (0, 1, 2, ...).
+# - near_cut: true/false indicating that the line is very close to a natural scene/shot cut.
+# - tags: zero or more audio tags like "music" or "laughter".
+# - excitement: a 0–1 score combining energy, cuts and tags (higher means more exciting).
+
+# DO NOT invent or rewrite text.
+# Your job: confidently pick engaging *time ranges* (start_time and end_time in seconds) that mark interesting
+# 30–90 second candidate highlights (hooks, emotional moments, surprising lines) in the provided transcript.
+
+# **Important rules (follow exactly):**
+# - Return JSON only.
+# - Pay close attention to the transcript *content* first.
+# - Use the features as guidance:
+#   - Higher energy and excitement usually mean more intense/emotional moments.
+#   - near_cut=true is often a good place to start or end a highlight so the cut feels natural.
+#   - tags like "laughter" suggest funny moments; "music" can suggest hype or build-up.
+#   - Do NOT rely on any single feature alone; only choose highlights where the spoken content is strong
+#     AND the features support it.
+# - You should almost always return several clips when the transcript is non-empty. It is better to
+#   select a few reasonable candidates than to be over-cautious and return nothing.
+# - When the video is long and has many intense or exciting moments (for example, a sports match with
+#   multiple goals or big chances), prefer to surface **multiple distinct highlights** instead of a
+#   single long summary clip. Treat each clearly exciting moment (e.g., each goal sequence) as its
+#   own candidate highlight whenever the timestamps allow.
+# - For short or low-intensity videos, still pick the most interesting parts (even if subtle) rather
+#   than returning zero clips.
+# - For each clip return: id, start_time, end_time, category, title, caption, hashtags, description,
+#   scores (hook, surprise_novelty, emotion,
+#   clarity_self_contained, shareability, cta_potential between 0 and 5), overall virality_score (average), unsafe (true/false), why (short).
+# - Based on the scores, generate overall "virality_score" (average).
+# - start_time and end_time should be numeric seconds (e.g., 123.45).
+# - Use only timestamps visible in the transcript lines (do not invent times outside the range shown).
+# - The client code will snap your start/end to transcript line boundaries and enforce exact duration.
+# - Prefer highlight boundaries that align with scene changes (near_cut=true) when possible.
+# - For each chosen highlight, assign one category:
+#    - "Hook"
+#    - "Tip"
+#    - "Insight"
+#    - "Story"
+#    - "Conclusion"
+# - For each chosen highlight, generate title (catchy 3–6 words, good for social media title overlay),
+#   caption (short 1-sentence subtitle text, conversational style, emoji-friendly), 5–8 trending hashtags relevant to the highlight
+#   and longer description (2–3 sentences) suitable for YouTube/Facebook.
+# - Example output:
+# {{
+#   "clips": [
+#     {{
+#       "id": "clip_1",
+#       "start_time": 12.34,
+#       "end_time": 47.89,
+#       "category": "Hook",
+#       "title": "catchy 3–6 words, good for social media title overlay",
+#       "caption": "short 1-sentence subtitle text, conversational style, emoji-friendly",
+#       "hashtags": "#financialtips, #wealth",
+#       "description": "longer description (2–3 sentences) suitable for YouTube/Facebook",
+#       "scores": {{ "hook":5, "surprise_novelty":4, "emotion":4, "clarity_self_contained":5, "shareability":4, "cta_potential":3, "unsafe": false }},
+#       "virality_score": 5.1,
+#       "unsafe": "false",
+#       "why": "short reason"
+#     }}
+#   ]
+# }}
+# """.format(TOP_K=TOP_K)
+
 SYSTEM_PROMPT = """
-You are a professional short-form video editor.
-
-You will be given transcript lines with timestamps and several simple numeric/audio features per line:
-- energy: number where higher means louder/more intense audio.
-- scene_id: integer identifying which visual scene the line belongs to (0, 1, 2, ...).
-- near_cut: true/false indicating that the line is very close to a natural scene/shot cut.
-- tags: zero or more audio tags like "music" or "laughter".
-- excitement: a 0–1 score combining energy, cuts and tags (higher means more exciting).
-
-DO NOT invent or rewrite text.
-Your job: confidently pick engaging *time ranges* (start_time and end_time in seconds) that mark interesting
-30–90 second candidate highlights (hooks, emotional moments, surprising lines) in the provided transcript.
-
-**Important rules (follow exactly):**
-- Return JSON only.
-- Pay close attention to the transcript *content* first.
-- Use the features as guidance:
-  - Higher energy and excitement usually mean more intense/emotional moments.
-  - near_cut=true is often a good place to start or end a highlight so the cut feels natural.
-  - tags like "laughter" suggest funny moments; "music" can suggest hype or build-up.
-  - Do NOT rely on any single feature alone; only choose highlights where the spoken content is strong
-    AND the features support it.
-- You should almost always return several clips when the transcript is non-empty. It is better to
-  select a few reasonable candidates than to be over-cautious and return nothing.
-- When the video is long and has many intense or exciting moments (for example, a sports match with
-  multiple goals or big chances), prefer to surface **multiple distinct highlights** instead of a
-  single long summary clip. Treat each clearly exciting moment (e.g., each goal sequence) as its
-  own candidate highlight whenever the timestamps allow.
-- For short or low-intensity videos, still pick the most interesting parts (even if subtle) rather
-  than returning zero clips.
-- For each clip return: id, start_time, end_time, category, title, caption, hashtags, description,
-  scores (hook, surprise_novelty, emotion,
-  clarity_self_contained, shareability, cta_potential between 0 and 5), overall virality_score (average), unsafe (true/false), why (short).
-- Based on the scores, generate overall "virality_score" (average).
-- start_time and end_time should be numeric seconds (e.g., 123.45).
-- Use only timestamps visible in the transcript lines (do not invent times outside the range shown).
-- The client code will snap your start/end to transcript line boundaries and enforce exact duration.
-- Prefer highlight boundaries that align with scene changes (near_cut=true) when possible.
-- For each chosen highlight, assign one category:
-   - "Hook"
-   - "Tip"
-   - "Insight"
-   - "Story"
-   - "Conclusion"
-- For each chosen highlight, generate title (catchy 3–6 words, good for social media title overlay),
-  caption (short 1-sentence subtitle text, conversational style, emoji-friendly), 5–8 trending hashtags relevant to the highlight
-  and longer description (2–3 sentences) suitable for YouTube/Facebook.
-- Example output:
-{{
+You are a professional short-form video editor and viral content evaluator.
+Your task is to analyze a video transcript WITH TIMESTAMPS and identify
+short video clips that are highly likely to perform well on platforms such as:
+TikTok, YouTube Shorts, Instagram Reels, and X.
+You do not see the video.
+You must rely entirely on the transcript content, pacing, wording,
+and any explicit audience reactions described in the text.
+Your output must be concise, accurate, and directly usable
+for automated video clipping.
+VIRAL CLIP EVALUATION CRITERIA
+When selecting clips, evaluate each potential segment against one or more
+of the following criteria:
+• Humor or laughter (explicit or implied)
+• Emotional intensity or sudden emotional change
+• Strong hook or attention-grabbing statement
+• Surprise, contradiction, or unexpected reveal
+• Relatable, quotable, or repeatable phrasing
+• Clear setup followed by payoff
+• Explicit audience reaction (laughter, cheering, gasps)
+Only select clips that show clear engagement value.
+Not every laugh or statement is worth clipping.
+CLIP DURATION RULES
+• Preferred clip duration: use values provided by the user if present.
+• Typical viral range:
+  - TikTok / Reels: 7-30 seconds
+  - YouTube Shorts: 15-45 seconds
+Clips must:
+• Have a clear start and end
+• Avoid cutting off punchlines or reactions
+• Include minimal context if required (1-2 seconds before key moment)
+If multiple moments overlap or occur close together,
+return a single optimized clip instead of duplicates.
+USER INTENT HANDLING
+If a user intent is provided (e.g. “find all laugh moments”):
+• Prioritize moments matching the user's request
+• Apply the same viral-quality standards
+• Merge overlapping or adjacent intent-matching segments
+• Exclude weak, repetitive, or low-impact moments
+User intent guides selection, but does not override quality.
+You will receive:
+• A transcript with timestamps (start and end per sentence or phrase)
+• Optional user instruction
+• Optional duration constraints
+Example transcript format:
+[00:01.20 - 00:04.50] He walks in and says, "You're not gonna believe this."
+[00:04.50 - 00:07.80] Everyone starts laughing.
+[00:07.80 - 00:12.30] "I forgot my own birthday!"
+REQUIRED OUTPUT FORMAT (STRICT)
+Return ONLY valid JSON.
+Do not include explanations or extra text.
+{
   "clips": [
-    {{
-      "id": "clip_1",
-      "start_time": 12.34,
-      "end_time": 47.89,
-      "category": "Hook",
-      "title": "catchy 3–6 words, good for social media title overlay",
-      "caption": "short 1-sentence subtitle text, conversational style, emoji-friendly",
-      "hashtags": "#financialtips, #wealth",
-      "description": "longer description (2–3 sentences) suitable for YouTube/Facebook",
-      "scores": {{ "hook":5, "surprise_novelty":4, "emotion":4, "clarity_self_contained":5, "shareability":4, "cta_potential":3, "unsafe": false }},
-      "virality_score": 5.1,
-      "unsafe": "false",
-      "why": "short reason"
-    }}
+    {
+      "start_time": "MM:SS.ms",
+      "end_time": "MM:SS.ms",
+      "duration_seconds": 18.2,
+      "viral_score": 1-10,
+      "reason": "Concise explanation of why this clip is engaging",
+      "tags": ["humor", "laugh", "relatable"]
+    }
   ]
-}}
-""".format(TOP_K=TOP_K)
+}
+Use the same timestamp format as provided in the transcript.
+CONSTRAINTS
+• Do NOT fabricate timestamps
+• Do NOT return overlapping clips
+• Do NOT include weak or filler moments
+• Do NOT output internal reasoning
+• Do NOT exceed duration constraints unless unavoidable
+• Do NOT include commentary outside JSON
+• If no clips meet the criteria, return an empty clips array.
+OBJECTIVE
+Produce a ranked list of short, high-impact clips that:
+• Can be auto-cropped using timestamps
+• Are optimized for short-form social media engagement
+• Reflect both viral potential and user intent
+• Sort clips by viral_score in descending order.
+• viral_score guidance:
+9-10 = extremely strong viral moment
+7-8 = solid viral potential
+5-6 = acceptable but not exceptional
+Below 5 = do not include
+"""
+
 
 USER_TEMPLATE = """{prompt_hint}Transcript lines (start | end | energy | scene_id | near_cut | tags | excitement | text):
 {lines}
@@ -633,6 +719,8 @@ def derive_sound_event_raw_clips(transcript: List[Dict], min_gap: float = 5.0) -
         "scream",
         "breathing",
         "cheer",
+        "crying",
+        "emotional reaction",
     }
 
     # Collect midpoints for any segment that carries at least one interesting tag.
@@ -793,11 +881,11 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
     clips = materialize_from_times(raw_clips, transcript, min_sec=min_sec, max_sec=max_sec)
 
     # compute overall scores locally (weights)
-    WEIGHTS = {"hook":0.25,"surprise_novelty":0.15,"emotion":0.15,"clarity_self_contained":0.15,"shareability":0.15,"cta_potential":0.15}
+    WEIGHTS = {"hook":0.3,"surprise_novelty":0.1,"emotion":0.2,"clarity_self_contained":0.1,"shareability":0.2,"cta_potential":0.1}
     for c in clips:
         sc = c.get("scores", {})
         subtotal = sum(WEIGHTS[k] * max(0, min(5, int(sc.get(k, 0)))) for k in WEIGHTS)
-        base_overall = round(subtotal / 5 * 100, 1)
+        base_overall = round(subtotal / 5 * 100, 1) + 30 # Add 30 to boost the score
 
         # position-aware adjustment: gently prefer clips that are not only at the very start
         mid = (c["start"] + c["end"]) / 2.0
@@ -965,40 +1053,3 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
         "video_path": input_video,
         "clips": top,
     }
-
-# ---------------- MAIN ----------------
-if __name__ == "__main__":
-    input_video = "input.mp4"         # adjust path
-    transcript_path = "transcript.json"
-
-    result = generate_highlights(input_video=input_video, transcript_path=transcript_path, job_dir=HIGHLIGHT_DIR)
-
-    # export with ffmpeg (use -ss before -i for faster keyframe cut; consider re-encoding if needed)
-    for c in result["clips"]:
-        start, end = c["start"], c["end"]
-        caption = c.get("caption") or ""
-        output = os.path.join(HIGHLIGHT_DIR, c["category"] + "_" + c["filename"])
-
-        safe_caption = escape_caption(caption)
-        safe_font = escape_font_path_for_ffmpeg(FONT_PATH)
-
-        vf = ",".join([
-            "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos",
-            "unsharp=5:5:1.0:5:5:0.0",
-            "crop=1080:1920",
-        ])
-
-        cmd = [
-            "ffmpeg", "-y",
-            "-ss", str(start),
-            "-to", str(end),
-            "-i", input_video,
-            "-vf", vf,
-            "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
-            "-c:a", "copy",
-            output
-        ]
-        print(f"➡️ Exporting {c['id']} {start:.2f}-{end:.2f} → {output}  ({c.get('adjustment_reason','')})")
-        subprocess.run(cmd, check=True)
-
-    print("✅ All exports done.")

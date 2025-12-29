@@ -1,33 +1,49 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  web:
-    build: .
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    volumes:
-      - .:/app
-    ports:
-      - "8000:8000"
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    depends_on:
-      - redis
+    # web: This service runs your main web application. When a user initiates a long-running process (like exporting a video), the web service creates a "task" and puts it into a queue.
+    web:
+        build: .
+        command: gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 app.main:app
+        volumes:
+            - .:/app
+        ports:
+            - "8000:8000"
+        environment:
+            - REDIS_URL=redis://redis:6379/0
+            - CELERY_BROKER_URL=redis://redis:6379/0
+            - CELERY_RESULT_BACKEND=redis://redis:6379/0
+        depends_on:
+            - redis
 
-  worker:
-    build: .
-    command: celery -A app.celery_app worker --loglevel=info
-    volumes:
-      - .:/app
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    depends_on:
-      - redis
+    # worker: This service, the Celery worker, constantly monitors the Redis queue. When a new task appears, the worker picks it up and executes it in the background. This prevents the web application from freezing while waiting for heavy jobs to complete.
+    worker:
+        build: .
+        command: celery -A app.celery_app worker --loglevel=info
+        volumes:
+            - .:/app
+        environment:
+            - REDIS_URL=redis://redis:6379/0
+            - CELERY_BROKER_URL=redis://redis:6379/0
+            - CELERY_RESULT_BACKEND=redis://redis:6379/0
+        depends_on:
+            - redis
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # beat: This is the Celery scheduler. It doesn't execute tasks itself. Instead, its job is to send tasks to the Redis queue based on a predefined schedule. For example, you could configure a task to run every hour, every day at midnight, or every Monday morning.
+    beat:
+        build: .
+        command: celery -A app.celery_app beat --loglevel=info
+        volumes:
+            - .:/app
+        environment:
+            - REDIS_URL=redis://redis:6379/0
+            - CELERY_BROKER_URL=redis://redis:6379/0
+            - CELERY_RESULT_BACKEND=redis://redis:6379/0
+        depends_on:
+            - redis
+
+    # redis: This acts as the message broker, holding the queue of tasks that need to be processed.
+    redis:
+        image: redis:7-alpine
+        ports:
+            - "6379:6379"

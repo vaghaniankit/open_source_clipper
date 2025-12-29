@@ -245,14 +245,18 @@ def export_video_task(self, path: str, aspect: str = "9:16"):
     base = Path(__file__).resolve().parent.parent
     storage = base / "storage"
     job_id = getattr(getattr(self, "request", None), "id", None) or Path(path).stem
+    print('\n\n➡ app/tasks.py:248 job_id:', job_id)
     out_dir = storage / "exports" / str(job_id)
+    print('\n\n➡ app/tasks.py:249 out_dir:', out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Build output filename
     src = Path(path)
     suffix = src.suffix or ".mp4"
     name = f"{src.stem}_{aspect.replace(':', 'x')}" + suffix
+    print('\n\nXXXX➡ app/tasks.py:255 name:', name)
     out_path = out_dir / name
+    print('\n\nXXXX➡ app/tasks.py:256 out_path:', out_path)
 
     # Perform export
     from .utils.export import export_with_aspect
@@ -290,7 +294,7 @@ def export_clip_task(self, job_id: str, clip: dict, aspect: str = "9:16"):
         raise RuntimeError(f"source video not found: {src}")
 
     # Build output directory under storage/exports/<job_id>
-    out_dir = storage / "exports" / str(job_id)
+    out_dir = storage / "exports" / str(job_id) / "previews"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Use clip filename if present, otherwise derive one
@@ -321,19 +325,29 @@ def export_clip_task(self, job_id: str, clip: dict, aspect: str = "9:16"):
     # Prepare subtitles for this clip using the pipeline transcript.json
     transcript_json = job_dir / "transcript.json"
     subtitle_path: Optional[str] = None
+    ass_path: Optional[str] = None
     if transcript_json.exists():
         try:
-            from .utils.subtitles import write_clip_srt
+            from .utils.subtitles import write_clip_subtitles
 
-            srt_path = write_clip_srt(transcript_json, clip, out_dir)
-            subtitle_path = str(srt_path)
-        except Exception:
+            srt_path, ass_path_obj = write_clip_subtitles(transcript_json, clip, out_dir)
+            subtitle_path = str(srt_path)  # Keep using SRT for burnt-in subs
+            ass_path = str(ass_path_obj)
+        except Exception as e:
+            print(f"⚠️ Subtitle generation failed: {e}")
             subtitle_path = None
+            ass_path = None
 
     from .utils.export import export_with_aspect
 
     self.update_state(state="STARTED", meta={"stage": "export_clip", "progress": 80})
-    result_path = export_with_aspect(str(tmp_cut), str(raw_clip_path), aspect=aspect, subtitle_path=subtitle_path)
+    result_path = export_with_aspect(
+        str(tmp_cut), 
+        str(raw_clip_path), 
+        aspect=aspect, 
+        subtitle_path=subtitle_path,
+        ass_path=str(ass_path) if ass_path else None
+    )
 
     # Optionally remove tmp_cut later; for now, keep for debugging
     return {

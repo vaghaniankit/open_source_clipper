@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+    # web: Main FastAPI app (serves HTTP requests).
+    web:
+        build: .
+        ports:
+            - "8000:8000"
+        volumes:
+            - ./storage:/home/user/app/storage
+        env_file:
+            - .env
+        restart: unless-stopped
+        depends_on:
+            - redis
+
+    # worker: Celery worker for all background tasks.
+    worker:
+        build: .
+        command: celery -A app.celery_app worker -l info
+        volumes:
+            - ./storage:/home/user/app/storage
+        env_file:
+            - .env
+        restart: unless-stopped
+        depends_on:
+            - redis
+
+    # beat: Celery beat scheduler (periodic task scheduler).
+    beat:
+        build: .
+        command: celery -A app.celery_app beat -l info
+        volumes:
+            - ./storage:/home/user/app/storage
+        env_file:
+            - .env
+        restart: unless-stopped
+        depends_on:
+            - redis
+
+    # redis: Redis server for broker/results backend.
+    redis:
+        image: "redis:7-alpine"
+        restart: unless-stopped
+        volumes:
+            - redis_data:/data
+
+volumes:
+    redis_data:
