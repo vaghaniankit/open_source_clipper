@@ -6,7 +6,7 @@ services:
         container_name: open_source_clipper_web
         build: .
         ports:
-            - "8000:8000"
+            - "20673:20673"
         volumes:
             - ./storage:/home/user/app/storage
         env_file:

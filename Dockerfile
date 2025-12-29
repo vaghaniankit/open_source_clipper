@@ -36,7 +36,8 @@ RUN python3 -m piptools sync requirements.txt
 COPY --chown=user:user . .
 
 # Expose the port
-EXPOSE 8000
+# EXPOSE 8000
+EXPOSE 20673
 
 # Set the entrypoint
 CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
