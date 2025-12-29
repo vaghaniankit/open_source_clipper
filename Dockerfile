@@ -38,4 +38,5 @@ COPY --chown=user:user . .
 EXPOSE 8000
 
 # Set the entrypoint
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
+ENTRYPOINT ["/usr/local/bin/gunicorn"]
+CMD ["-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
