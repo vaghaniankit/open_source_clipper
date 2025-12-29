@@ -1,19 +1,15 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10-slim
+# Use the official NVIDIA CUDA base image
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
 # Set environment variables
-
-# Prevent Python from writing .pyc files to disk (makes containers lighter and often unnecessary in production)
 ENV PYTHONDONTWRITEBYTECODE=1
-
-# Ensure output is sent straight to terminal (useful for Docker logs, avoids buffering)
 ENV PYTHONUNBUFFERED=1
-
-# Avoids interactive prompts during OS-level package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip \
+    python3-dev \
     ffmpeg \
     libsndfile1 \
     libgl1 \
@@ -22,27 +18,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Set up a non-root user
 RUN useradd -m -u 1000 user
-
-# Set up the entrypoint
-COPY --chown=user:user ./docker/docker-entrypoint.sh /home/user/app/docker-entrypoint.sh
-RUN chmod +x /home/user/app/docker-entrypoint.sh
 USER user
 ENV HOME=/home/user
 WORKDIR /home/user/app
 
-# Copy the requirements file and install dependencies
+# Copy the requirements file
 COPY --chown=user:user requirements.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY --chown=user:user . .
 
-# Set up the entrypoint
-RUN chmod +x /home/user/app/docker-entrypoint.sh
-ENTRYPOINT ["/home/user/app/docker-entrypoint.sh"]
-
-# Expose the port that gunicorn will run on
+# Expose the port
 EXPOSE 8000
 
-# Command to run the application
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "app.main:app"]
+# Set the entrypoint
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
