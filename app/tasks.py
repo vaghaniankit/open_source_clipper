@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from .celery_app import celery_app
+from .paths import STORAGE_DIR
 
 # Default transcription model can be overridden via TRANSCRIBE_MODEL env var
 DEFAULT_TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "medium")
@@ -17,10 +18,10 @@ def download_youtube_task(self, url: str, filename: Optional[str] = None):
     """Download YouTube video using yt_dlp into storage/videos.
     Returns local path.
     """
-    base = Path(__file__).resolve().parent.parent
-    videos_dir = base / "storage" / "videos"
+    base = STORAGE_DIR.parent
+    videos_dir = STORAGE_DIR / "videos"
     videos_dir.mkdir(parents=True, exist_ok=True)
-    downloads_dir = base / "downloads"
+    downloads_dir = STORAGE_DIR / "downloads"
     downloads_dir.mkdir(parents=True, exist_ok=True)
 
     # Run download (into downloads/ via existing script), then move to videos/
@@ -52,11 +53,11 @@ def download_youtube_task(self, url: str, filename: Optional[str] = None):
 @celery_app.task(bind=True)
 def process_video_task(self, path: str):
     """Stub processing task: extract audio then return paths. Replace with orchestrator."""
-    base = Path(__file__).resolve().parent.parent
+    base = STORAGE_DIR.parent
     orig_cwd = os.getcwd()
     try:
         os.chdir(base)
-        out_path = base / "storage" / "videos" / (Path(path).stem + "_vocals.wav")
+        out_path = STORAGE_DIR / "videos" / (Path(path).stem + "_vocals.wav")
         cmd = [
             "ffmpeg", "-y",
             "-i", path,
@@ -87,10 +88,8 @@ def orchestrate_pipeline_task(
 
     Returns paths and an enriched transcript summary used for highlight generation.
     """
-    base = Path(__file__).resolve().parent.parent
-    storage = base / "storage"
     job_id = getattr(getattr(self, "request", None), "id", None) or Path(path).stem
-    job_dir = storage / "pipeline" / str(job_id)
+    job_dir = STORAGE_DIR / "pipeline" / str(job_id)
     job_dir.mkdir(parents=True, exist_ok=True)
 
     # Persist simple job metadata (prompt, duration preset, original path)
@@ -242,11 +241,9 @@ def export_video_task(self, path: str, aspect: str = "9:16"):
     """Export the given video path to the requested aspect ratio, padding as needed.
     Returns the output path.
     """
-    base = Path(__file__).resolve().parent.parent
-    storage = base / "storage"
     job_id = getattr(getattr(self, "request", None), "id", None) or Path(path).stem
     print('\n\n➡ app/tasks.py:248 job_id:', job_id)
-    out_dir = storage / "exports" / str(job_id)
+    out_dir = STORAGE_DIR / "exports" / str(job_id)
     print('\n\n➡ app/tasks.py:249 out_dir:', out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -273,9 +270,7 @@ def export_clip_task(self, job_id: str, clip: dict, aspect: str = "9:16"):
     - clip: clip dict containing start, end, id, filename, etc.
     - aspect: "1:1", "16:9", or "9:16"
     """
-    base = Path(__file__).resolve().parent.parent
-    storage = base / "storage"
-    job_dir = storage / "pipeline" / str(job_id)
+    job_dir = STORAGE_DIR / "pipeline" / str(job_id)
 
     # Load highlights.json to get the source video path (authoritative)
     import json
@@ -294,7 +289,7 @@ def export_clip_task(self, job_id: str, clip: dict, aspect: str = "9:16"):
         raise RuntimeError(f"source video not found: {src}")
 
     # Build output directory under storage/exports/<job_id>
-    out_dir = storage / "exports" / str(job_id) / "previews"
+    out_dir = STORAGE_DIR / "exports" / str(job_id) / "previews"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Use clip filename if present, otherwise derive one
@@ -366,14 +361,12 @@ def speaker_center_video_task(self, path: str):
     an already-exported highlight clip). The output will keep the same filename
     with a `_centered` suffix.
     """
-    base = Path(__file__).resolve().parent.parent
-    storage = base / "storage"
     src = Path(path)
     if not src.exists():
         raise RuntimeError(f"source video not found: {src}")
 
     job_id = getattr(getattr(self, "request", None), "id", None) or src.stem
-    out_dir = storage / "exports" / str(job_id)
+    out_dir = STORAGE_DIR / "exports" / str(job_id)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Build centered output filename
@@ -402,10 +395,8 @@ def generate_highlights_task(self, video_path: str, transcript_path: str):
     (for example produced by orchestrate_pipeline_task). It will write
     highlights.json into storage/pipeline/<job_id>/ and return the clips.
     """
-    base = Path(__file__).resolve().parent.parent
-    storage = base / "storage"
     job_id = getattr(getattr(self, "request", None), "id", None) or Path(video_path).stem
-    job_dir = storage / "pipeline" / str(job_id)
+    job_dir = STORAGE_DIR / "pipeline" / str(job_id)
 
     # Ensure job dir exists and resolve transcript path
     job_dir.mkdir(parents=True, exist_ok=True)

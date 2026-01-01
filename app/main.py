@@ -352,6 +352,7 @@ def app_clip_detail(job_id: str, clip_id: str, request: Request):
     # Load real clip data
     import json
     highlights_path = STORAGE_DIR / "pipeline" / job_id / "highlights.json"
+    print('\n\n XXXX ➡ app/main.py:355 highlights_path:', highlights_path)
     if highlights_path.exists():
         try:
             with open(highlights_path, "r", encoding="utf-8") as f:
@@ -367,6 +368,7 @@ def app_clip_detail(job_id: str, clip_id: str, request: Request):
 
     # Load transcript segments for this clip
     transcript_path = STORAGE_DIR / "pipeline" / job_id / "transcript.json"
+    print('\n\n XXXX ➡ app/main.py:371 transcript_path:', transcript_path)
     if transcript_path.exists() and clip.get("end") > 0:
         try:
             with open(transcript_path, "r", encoding="utf-8") as f:

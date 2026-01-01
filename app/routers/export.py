@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -36,8 +37,6 @@ def export_clip(
     highlights_path = job_dir / "highlights.json"
     if not highlights_path.exists():
         raise HTTPException(status_code=404, detail="highlights not found for this job_id")
-
-    import json
 
     try:
         data = json.loads(highlights_path.read_text(encoding="utf-8"))
@@ -81,11 +80,11 @@ def export_preview_clip(
     URL that can be accessed via the /media mount.
     """
     job_dir = STORAGE_DIR / "pipeline" / job_id
+    print('\n\n XXXX ➡ app/routers/export.py:83 job_dir:', job_dir)
     highlights_path = job_dir / "highlights.json"
+    print('\n\n XXXX ➡ app/routers/export.py:85 highlights_path:', highlights_path)
     if not highlights_path.exists():
         raise HTTPException(status_code=404, detail="highlights not found for this job_id")
-
-    import json
 
     try:
         data = json.loads(highlights_path.read_text(encoding="utf-8"))
@@ -107,6 +106,7 @@ def export_preview_clip(
 
     # Prepare directories
     exports_dir = STORAGE_DIR / "exports" / job_id / "previews"
+    print('\n\n XXXX ➡ app/routers/export.py:109 exports_dir:', exports_dir)
     exports_dir.mkdir(parents=True, exist_ok=True)
 
     # Determine final preview path. We key by aspect so each ratio has its own
@@ -115,6 +115,7 @@ def export_preview_clip(
     aspect_suffix = aspect.replace(":", "x")
     preview_name = f"{Path(base_name).stem}_{aspect_suffix}_preview.mp4"
     preview_path = exports_dir / preview_name
+    print('\n\n XXXX ➡ app/routers/export.py:118 preview_path:', preview_path)
 
     if preview_path.exists():
         rel = preview_path.relative_to(STORAGE_DIR)
@@ -151,7 +152,6 @@ def export_preview_clip(
 
     # 2) Build subtitles for this clip using transcript.json
     transcript_json = job_dir / "transcript.json"
-    print('\n\n➡ app/routers/export.py:154 transcript_json:', transcript_json)
     subtitle_path: Optional[str] = None
     ass_path: Optional[str] = None
     if transcript_json.exists():
@@ -159,10 +159,15 @@ def export_preview_clip(
             from ..utils.subtitles import write_clip_subtitles
 
             srt_path, ass_path = write_clip_subtitles(transcript_json, clip, exports_dir)
+            print('\n\n XXXX ➡ app/routers/export.py:162 ass_path:', ass_path)
+            print('➡ app/routers/export.py:162 srt_path:', srt_path)
             subtitle_path = str(srt_path)
-        except Exception:
+        except Exception as e:
+            print('\n\n XXXX ➡ app/routers/export.py:164 e:', e)
             subtitle_path = None
             ass_path = None
+            
+    print('\n\n XXXX ➡ app/routers/export.py:168 ass_path:', ass_path)
 
     # 3) Apply speaker centering to the raw cut
     centered_path = exports_dir / f"{Path(base_name).stem}_centered_tmp.mp4"
@@ -177,8 +182,16 @@ def export_preview_clip(
 
     # 4) Export low-res preview with aspect and optional subtitles
     from ..utils.export import export_with_aspect
+    
 
-    export_with_aspect(str(src_for_export), str(preview_path), aspect=aspect, subtitle_path=subtitle_path, ass_path=ass_path)
+
+    export_with_aspect(
+        str(src_for_export), 
+        str(preview_path), 
+        aspect=aspect, 
+        subtitle_path=subtitle_path, 
+        ass_path=ass_path
+    )
 
     rel = preview_path.relative_to(STORAGE_DIR)
     # from_cache=False means this preview was just generated
@@ -202,8 +215,6 @@ def export_clip_download(
     highlights_path = job_dir / "highlights.json"
     if not highlights_path.exists():
         raise HTTPException(status_code=404, detail="highlights not found for this job_id")
-
-    import json
 
     try:
         data = json.loads(highlights_path.read_text(encoding="utf-8"))
@@ -279,7 +290,13 @@ def export_clip_download(
     # 4) Export HD clip with aspect and optional subtitles
     from ..utils.export import export_with_aspect
 
-    export_with_aspect(str(src_for_export), str(output_path), aspect=aspect, subtitle_path=subtitle_path, ass_path=ass_path)
+    export_with_aspect(
+        str(src_for_export), 
+        str(output_path), 
+        aspect=aspect, 
+        subtitle_path=subtitle_path, 
+        ass_path=ass_path
+    )
 
     rel = output_path.relative_to(STORAGE_DIR)
     return {"download_url": f"/media/{rel.as_posix()}"}

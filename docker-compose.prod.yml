@@ -1,14 +1,15 @@
-version: "3.8"
-
 services:
     # web: Main FastAPI web application (serves API and web frontend)
     web:
         container_name: open_source_clipper_web
-        build: .
+        build:
+            context: .
+            dockerfile: Dockerfile
+            target: final
         ports:
             - "20673:20673"
         volumes:
-            - ./storage:/home/user/app/storage
+            - ./storage:/app/storage
         env_file:
             - .env
         restart: unless-stopped
@@ -18,10 +19,13 @@ services:
     # worker: Celery GPU worker for processing GPU-accelerated tasks from the queue
     worker:
         container_name: open_source_clipper_worker
-        build: .
+        build:
+            context: .
+            dockerfile: Dockerfile
+            target: final
         command: celery -A app.celery_app worker -l info -Q gpu_tasks -c 1
         volumes:
-            - ./storage:/home/user/app/storage
+            - ./storage:/app/storage
         env_file:
             - .env
         restart: unless-stopped
@@ -38,10 +42,13 @@ services:
     # cpu_worker: Celery worker for CPU-only tasks (does not require GPU)
     cpu_worker:
         container_name: open_source_clipper_cpu_worker
-        build: .
+        build:
+            context: .
+            dockerfile: Dockerfile
+            target: final
         command: celery -A app.celery_app worker -l info -Q cpu_tasks
         volumes:
-            - ./storage:/home/user/app/storage
+            - ./storage:/app/storage
         env_file:
             - .env
         restart: unless-stopped
@@ -51,10 +58,13 @@ services:
     # beat: Celery Beat scheduler for scheduled/background tasks
     beat:
         container_name: open_source_clipper_beat
-        build: .
+        build:
+            context: .
+            dockerfile: Dockerfile
+            target: final
         command: celery -A app.celery_app beat -l info
         volumes:
-            - ./storage:/home/user/app/storage
+            - ./storage:/app/storage
         env_file:
             - .env
         restart: unless-stopped

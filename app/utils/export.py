@@ -2,6 +2,8 @@ import subprocess
 from pathlib import Path
 from typing import Literal, Optional
 
+from .subtitles import escape_path_for_ffmpeg
+
 Aspect = Literal["1:1", "16:9", "9:16"]
 
 
@@ -12,7 +14,7 @@ def export_with_aspect(
     subtitle_path: Optional[str] = None,
     ass_path: Optional[str] = None
 ) -> str:
-    print('\n\n XXXX➡ app/utils/export.py:9 ass_path:', ass_path)
+    print('\n\n➡ app/utils/export.py:17 ass_path:', ass_path)
     src = Path(input_path)
     dst = Path(output_path)
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -31,11 +33,9 @@ def export_with_aspect(
     filters = [f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p"]
 
     if ass_path:
-        from .subtitles import escape_path_for_ffmpeg
         ass_escaped = escape_path_for_ffmpeg(ass_path)
         filters.append(f"ass={ass_escaped}")
     elif subtitle_path:
-        from .subtitles import escape_path_for_ffmpeg
         subs_escaped = escape_path_for_ffmpeg(subtitle_path)
         filters.append(f"subtitles={subs_escaped}")
     

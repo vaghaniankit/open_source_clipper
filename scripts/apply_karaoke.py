@@ -7,19 +7,86 @@ import json
 import subprocess
 import sys
 
-def make_karaoke_ass_from_words(words, ass_file, font="Arial", font_size=48):
-    """Create ASS subtitle file from word timestamps."""
+def make_karaoke_ass_from_words(words, ass_file, font="Arial", font_size=20):
+    """
+    Create ASS subtitles with per-word karaoke highlighting:
+    - Active word has a yellow background + black text + slight scale animation
+    - Inactive words are dimmed gray
+    - Box padding and soft edges create a pill-style illusion
+    """
+    def ass_time(seconds):
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = seconds % 60
+        return f"{h:d}:{m:02d}:{s:05.2f}"
+
     with open(ass_file, "w", encoding="utf-8") as f:
-        f.write("[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\n")
-        f.write("Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, Bold, Italic, Underline, "
-                "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
-                "MarginR, MarginV, Encoding\n")
-        f.write(f"Style: Default,{font},{font_size},&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,"
-                f"1,1,0,2,10,10,10,1\n\n[Events]\n")
-        for w in words:
-            start_time = format_ass_time(w["start"])
-            end_time = format_ass_time(w["end"])
-            f.write(f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{w['word']}\n")
+        # --- Script Info ---
+        f.write("""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+""")
+
+        # --- Style ---
+        f.write(
+            f"Style: Default,{font},{font_size},"
+            "&H00FFFFFF,"        # PrimaryColour → White (inactive default)
+            "&H00FFFFFF,"        # SecondaryColour
+            "&H00000000,"        # OutlineColour → Black
+            "&H00000000,"        # BackColour → transparent by default
+            "0,0,0,0,100,100,0,0,"
+            "3,10,0,"            # BorderStyle=3, Outline=10 (padding)
+            "2,150,150,150,1\n\n"    # Bottom-center, lifted up
+        )
+
+        # --- Events Header ---
+        f.write("[Events]\n")
+        f.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+
+        # --- Group words into subtitle lines ---
+        lines = []
+        if words:
+            current_line = [words[0]]
+            for i in range(1, len(words)):
+                if words[i]["start"] - words[i-1]["end"] > 0.5:  # new line on pause
+                    lines.append(current_line)
+                    current_line = []
+                current_line.append(words[i])
+            lines.append(current_line)
+
+        # --- Generate per-word karaoke events ---
+        for line in lines:
+            line_words = [w["word"] for w in line]
+
+            for i, active_word in enumerate(line):
+                start = ass_time(active_word["start"])
+                end = ass_time(active_word["end"])
+
+                parts = []
+                for j, w in enumerate(line_words):
+                    if i == j:
+                        # Active word: black text + yellow box + slight scale + soft edges
+                        parts.append(
+                            "{"
+                            "\\1c&H000000FF&"      # Black text
+                            "\\4c&H0000FFFF&"      # Yellow background
+                            "\\bord12"             # Box padding
+                            "\\blur2"              # Soft edges
+                            "\\fscx100\\fscy100"   # Base scale
+                            "\\t(0,120,\\fscx110\\fscy110)"  # Slight scale animation
+                            "}" + w + "{\\r}"
+                        )
+                    else:
+                        # Inactive word: dim gray text, no background
+                        parts.append("{\\1c&H888888FF&}" + w + "{\\r}")
+
+                text = " ".join(parts)
+                f.write(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n")
+
 
 def format_ass_time(seconds):
     """Convert seconds to ASS time format (H:MM:SS.cc)."""
@@ -107,9 +174,9 @@ def apply_karaoke_to_clip(clip_path, highlights_json_path, aligned_transcript_pa
         return False
 
 if __name__ == "__main__":
-    highlights_dir = "highlights"
+    highlights_dir = "storage/highlights"
     highlights_json = "highlights.json"
-    aligned_transcript = "aligned_transcript.json"
+    aligned_transcript = "storage/data/aligned_transcript.json"
     
     if not os.path.exists(highlights_dir):
         print(f"❌ {highlights_dir} directory not found")

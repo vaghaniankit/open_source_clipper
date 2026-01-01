@@ -1,0 +1,14 @@
+{
+    "clips": [
+        {
+            "filename": "test_clip.mp4",
+            "start": 0,
+            "end": 10
+        },
+        {
+            "filename": "test_clip_white.mp4",
+            "start": 0,
+            "end": 10
+        }
+    ]
+}
