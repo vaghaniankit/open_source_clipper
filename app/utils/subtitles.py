@@ -217,32 +217,70 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     ass_lines = [ass_header]
     
-    # Filter out tags for karaoke effect
-    words_only = [item for item in all_items if item["type"] == "word"]
-    print('\n\n XXXX ➡ app/utils/subtitles.py:222 words_only:', words_only)
-
-    # Adjust word timestamps to be relative to the clip start
-    adjusted_words = []
-    for w in words_only:
-        adjusted_words.append({
-            "word": w["text"],
-            "start": w["start"] - clip_start,
-            "end": w["end"] - clip_start
-        })
-
-    print('\n\n XXXX ➡ app/utils/subtitles.py:232 adjusted_words:', adjusted_words)
-    
-    # Group words into subtitle lines
+    # Group words into subtitle lines, respecting sentence boundaries and tags
     lines = []
-    if adjusted_words:
-        current_line = [adjusted_words[0]]
-        for i in range(1, len(adjusted_words)):
-            # new line on pause
-            if adjusted_words[i]["start"] - adjusted_words[i-1]["end"] > 0.5:
+    current_line = []
+    sentence_ends = {'.', '?', '!'}
+
+    for i, item in enumerate(all_items):
+        # Calculate relative timestamps
+        start_rel = item["start"] - clip_start
+        end_rel = item["end"] - clip_start
+
+        if item["type"] == "tag":
+            # If we hit a tag (like [laughter]), force a line break if we have content
+            if current_line:
                 lines.append(current_line)
                 current_line = []
-            current_line.append(adjusted_words[i])
+            # We do NOT include tags in the visible Karaoke text
+            continue
+
+        # It is a word
+        word_obj = {
+            "word": item["text"],
+            "start": start_rel,
+            "end": end_rel
+        }
+
+        # Check for significant silence gap (> 0.5s) since the last word
+        if current_line:
+            prev_end = current_line[-1]["end"]
+            if start_rel - prev_end > 0.5:
+                lines.append(current_line)
+                current_line = []
+            
+            # Soft limit: Max ~6 words per line for better readability (short phrases)
+            elif len(current_line) >= 6:
+                lines.append(current_line)
+                current_line = []
+
+        current_line.append(word_obj)
+
+        # Check if this word ends a sentence
+        if any(item["text"].endswith(p) for p in sentence_ends):
+            lines.append(current_line)
+            current_line = []
+
+    if current_line:
         lines.append(current_line)
+
+    # --- Sanitize Timestamps ---
+    # Prevent overlapping events which cause vertical stacking/double-rendering in players.
+    # We iterate through all words in sequence and ensure no word ends after the next one starts.
+    prev_word = None
+    for line in lines:
+        for word in line:
+            if prev_word:
+                # Fix overlap
+                if prev_word["end"] > word["start"]:
+                    prev_word["end"] = word["start"]
+                
+                # Optional: Ensure minimal duration (e.g., 0.1s) to prevent zero-length events?
+                # For karaoke, accurate sync is more important. Zero length events just won't show.
+                if prev_word["end"] < prev_word["start"]:
+                    prev_word["end"] = prev_word["start"]
+
+            prev_word = word
 
     # Generate per-word karaoke events
     for line in lines:
@@ -255,30 +293,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             parts = []
             for j, w_text in enumerate(line_words_text):
                 if i == j:
-                    # Active word: black text + yellow box + slight scale + soft edges
-                    # parts.append(
-                    #     "{"
-                    #     "\\1c&H000000FF&"      # Black text
-                    #     "\\4c&H0000FFFF&"      # Yellow background
-                    #     "\\bord12"             # Box padding
-                    #     "\\blur2"              # Soft edges
-                    #     "\\fscx100\\fscy100"   # Base scale
-                    #     "\\t(0,120,\\fscx110\\fscy110)"  # Slight scale animation
-                    #     "}" + w_text + "{\\r}"
-                    # )
-                    
-                    # Active word: smooth color + slight scale
+                    # Active word: Green Box effect
+                    # White text (\1c&HFFFFFF&) + Thick Green Border (\3c&H0000FF00&)
+                    # \bord10 creates the "box" background
                     parts.append(
                         "{"
-                        "\\1c&H00FFFF00&"        # Yellow text
-                        "\\fscx100\\fscy100"
-                        # "\\t(0,120,\\fscx108\\fscy108)"  # Gentle pop
+                        "\\1c&HFFFFFF&"          # White Text
+                        "\\3c&H0000FF00&"        # Bright Green Border (BGR: 00 FF 00)
+                        "\\bord10"               # Thick border to look like a box
+                        "\\blur3"                # Slight blur for softer edges
+                        "\\fscx105\\fscy105"     # Subtle scale up
                         "}" + w_text + "{\\r}"
                     )
                     
                 else:
-                    # Inactive word: dim gray text, no background
-                    parts.append("{\\1c&H888888FF&}" + w_text + "{\\r}")
+                    # Inactive word: Clean White
+                    # White text + Thin Black Border
+                    parts.append(
+                        "{"
+                        "\\1c&HFFFFFF&"          # White Text
+                        "\\3c&H00000000&"        # Black Border
+                        "\\bord2"                # Thin border
+                        "\\blur0"
+                        "}" + w_text + "{\\r}"
+                    )
 
             text = " ".join(parts)
             ass_lines.append(f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text}")
