@@ -294,11 +294,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             for j, w_text in enumerate(line_words_text):
                 if i == j:
                     # Active word: Green Box effect
-                    # White text (\1c&HFFFFFF&) + Thick Green Border (\3c&H0000FF00&)
-                    # \bord10 creates the "box" background
+                    # Black text (\1c&H000000&) + Thick Green Border (\3c&H0000FF00&)
+                    # \bord10 creates the "box" background with soft padding
                     parts.append(
                         "{"
-                        "\\1c&HFFFFFF&"          # White Text
+                        "\\1c&H000000&"          # Black Text
                         "\\3c&H0000FF00&"        # Bright Green Border (BGR: 00 FF 00)
                         "\\bord10"               # Thick border to look like a box
                         "\\blur3"                # Slight blur for softer edges
@@ -389,8 +389,8 @@ def escape_path_for_ffmpeg(path: str) -> str:
 def make_karaoke_ass_from_words(words, ass_file, font="Arial", font_size=20):
     """
     Create ASS subtitles with per-word karaoke highlighting:
-    - Active word has a yellow background + black text + slight scale animation
-    - Inactive words are dimmed gray
+    - Active word has a green background + black text + slight scale animation
+    - Inactive words are clean white with thin black border
     - Box padding and soft edges create a pill-style illusion
     """
     def ass_time(seconds):
@@ -418,7 +418,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
             "&H00000000,"        # OutlineColour → Black
             "&H00000000,"        # BackColour → transparent by default
             "0,0,0,0,100,100,0,0,"
-            "3,10,0,"            # BorderStyle=3, Outline=10 (padding)
+            "1,2,0,"             # BorderStyle=1, Outline=2, Shadow=0
             "2,150,150,150,1\n\n"    # Bottom-center, lifted up
         )
 
@@ -448,20 +448,29 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
                 parts = []
                 for j, w in enumerate(line_words):
                     if i == j:
-                        # Active word: black text + yellow box + slight scale + soft edges
+                        # Active word: Green Box effect
+                        # Black text (\1c&H000000&) + Thick Green Border (\3c&H0000FF00&)
                         parts.append(
                             "{"
-                            "\\1c&H000000FF&"      # Black text
-                            "\\4c&H0000FFFF&"      # Yellow background
-                            "\\bord12"             # Box padding
-                            "\\blur2"              # Soft edges
-                            "\\fscx100\\fscy100"   # Base scale
+                            "\\1c&H000000&"          # Black Text
+                            "\\3c&H0000FF00&"        # Bright Green Border (BGR: 00 FF 00)
+                            "\\bord10"               # Thick border to look like a box
+                            "\\blur3"                # Slight blur for softer edges
+                            "\\fscx105\\fscy105"     # Subtle scale up
                             "\\t(0,120,\\fscx110\\fscy110)"  # Slight scale animation
                             "}" + w + "{\\r}"
                         )
                     else:
-                        # Inactive word: dim gray text, no background
-                        parts.append("{\\1c&H888888FF&}" + w + "{\\r}")
+                        # Inactive word: Clean White
+                        # White text + Thin Black Border
+                        parts.append(
+                            "{"
+                            "\\1c&HFFFFFF&"          # White Text
+                            "\\3c&H00000000&"        # Black Border
+                            "\\bord2"                # Thin border
+                            "\\blur0"
+                            "}" + w + "{\\r}"
+                        )
 
                 text = " ".join(parts)
                 f.write(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n")
