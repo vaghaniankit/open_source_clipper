@@ -104,10 +104,12 @@ def build_clip_srt_and_ass(
         # Add tags as separate items
         tags = seg.get("tags") or []
         if tags:
+            # Capitalize tags for display (e.g. "laughter" -> "Laughter")
+            display_tags = [t.capitalize() for t in tags]
             all_items.append({
                 "start": seg_start,
                 "end": seg_end,
-                "text": f"[{', '.join(tags)}]",
+                "text": f"[{', '.join(display_tags)}]",
                 "type": "tag"
             })
 
@@ -228,18 +230,28 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         end_rel = item["end"] - clip_start
 
         if item["type"] == "tag":
-            # If we hit a tag (like [laughter]), force a line break if we have content
+            # 1. Force a line break if there's preceding content
             if current_line:
                 lines.append(current_line)
                 current_line = []
-            # We do NOT include tags in the visible Karaoke text
+            
+            # 2. Add the tag as its own single-item line
+            # We construct a special 'word' object for the tag
+            tag_obj = {
+                "word": item["text"], # e.g. "[Laughter]"
+                "start": start_rel,
+                "end": end_rel,
+                "is_tag": True
+            }
+            lines.append([tag_obj])
             continue
 
         # It is a word
         word_obj = {
             "word": item["text"],
             "start": start_rel,
-            "end": end_rel
+            "end": end_rel,
+            "is_tag": False
         }
 
         # Check for significant silence gap (> 0.5s) since the last word
@@ -285,7 +297,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     # Generate per-word karaoke events
     for line in lines:
         line_words_text = [w["word"] for w in line]
+        
+        # Check if this entire line is just a tag
+        if len(line) == 1 and line[0].get("is_tag"):
+            # Render tag as static text (no karaoke animation)
+            tag = line[0]
+            start_time = _format_ass_timestamp(tag["start"])
+            end_time = _format_ass_timestamp(tag["end"])
+            
+            # Static White Text style for tags
+            # We use a slightly different style: maybe smaller, or italic?
+            # For now, let's keep it clean white, maybe italic.
+            text = (
+                "{"
+                "\\1c&HFFFFFF&"          # White Text
+                "\\3c&H00000000&"        # Black Border
+                "\\bord2"                # Thin border
+                "\\blur0"
+                "\\i1"                   # Italic
+                "}" + tag["word"] + "{\\r}"
+            )
+            ass_lines.append(f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text}")
+            continue
 
+        # Normal karaoke line processing
         for i, active_word in enumerate(line):
             start_time = _format_ass_timestamp(active_word["start"])
             end_time = _format_ass_timestamp(active_word["end"])

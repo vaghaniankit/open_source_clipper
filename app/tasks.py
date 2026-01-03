@@ -169,6 +169,7 @@ def orchestrate_pipeline_task(
         attach_scene_metadata,
         analyze_audio_events,
         attach_audio_tags,
+        merge_events_into_segments,
         compute_excitement_score,
     )
 
@@ -198,7 +199,8 @@ def orchestrate_pipeline_task(
         events = analyze_audio_events(audio_path)
     except Exception:
         events = []
-    segments = attach_audio_tags(segments, events)
+    # Use the new merge function to include standalone events in gaps
+    segments = merge_events_into_segments(segments, events)
 
     # aggregate excitement score combining energy, cuts and tags
     segments = compute_excitement_score(segments)

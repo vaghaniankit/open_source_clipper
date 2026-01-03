@@ -247,6 +247,83 @@ def analyze_audio_events(audio_path: str, frame_length: float = 0.5, hop_length:
         return _analyze_audio_events_heuristic(audio_path, frame_length=frame_length, hop_length=hop_length)
 
 
+def merge_events_into_segments(segments: List[Dict], events: List[Dict], min_gap: float = 0.5) -> List[Dict]:
+    """Merge audio events into transcript segments.
+
+    1. If an event overlaps with existing speech segments, attach tags to those segments.
+    2. If an event occurs in a gap (silence) between segments, create a new
+       "sound event" segment.
+    """
+    if not events:
+        return segments
+    
+    # 1. Attach tags to overlapping speech
+    # (We keep the original logic for compatibility: existing speech segments get tags)
+    segments = attach_audio_tags(segments, events)
+
+    # 2. Identify gaps where significant audio events occur and inject new segments
+    # Sort existing segments by start time
+    segments = sorted(segments, key=lambda s: float(s.get("start", 0.0)))
+    
+    # Collect all time intervals covered by speech
+    speech_intervals = []
+    for s in segments:
+        speech_intervals.append((float(s.get("start", 0.0)), float(s.get("end", 0.0))))
+
+    new_segments = []
+
+    for ev in events:
+        ev_start = float(ev.get("start", 0.0))
+        ev_end = float(ev.get("end", ev_start))
+        labels = ev.get("labels", [])
+        if not labels or labels == ["none"]:
+            continue
+        
+        # We only care about specific labels for independent subtitles
+        # (e.g. music, laughter, applause, etc.)
+        valid_labels = [l for l in labels if l and l != "none"]
+        if not valid_labels:
+            continue
+        
+        # Check overlap with speech
+        # We only create a NEW segment if the event is significantly outside speech.
+        # "Significantly" means the event duration is mostly non-overlapping.
+        
+        # Simple approach: Check if the event center is inside any speech interval
+        # If not, it's a candidate for a standalone segment.
+        ev_center = (ev_start + ev_end) / 2.0
+        is_covered = False
+        for (s_start, s_end) in speech_intervals:
+            if s_start <= ev_center <= s_end:
+                is_covered = True
+                break
+        
+        if not is_covered:
+            # Create a new standalone segment
+            # We construct a label string like "[Music]" or "[Laughter]"
+            # If multiple labels, join them: "[Music, Laughter]"
+            tag_text = ", ".join(t.capitalize() for t in valid_labels)
+            
+            new_seg = {
+                "start": ev_start,
+                "end": ev_end,
+                "text": "",  # Empty spoken text
+                "words": [], # No words
+                "tags": valid_labels,
+                "is_sound_event": True, # Marker flag
+                # Add a synthetic word to carry the tag text for some renderers if needed
+                # But primarily we rely on the renderer handling "tags" or checking "is_sound_event"
+            }
+            new_segments.append(new_seg)
+
+    # Merge new segments into the main list
+    combined = segments + new_segments
+    # Sort by start time
+    combined.sort(key=lambda x: float(x.get("start", 0.0)))
+    
+    return combined
+
+
 def attach_audio_tags(segments: List[Dict], events: List[Dict]) -> List[Dict]:
     """Attach tags to segments based on overlapping audio events.
 
