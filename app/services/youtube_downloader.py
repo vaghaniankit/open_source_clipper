@@ -26,6 +26,10 @@ def download_youtube(url, choice="video", quality="best", filename=None):
     if os.path.exists("cookies.txt"):
         base_opts["cookiefile"] = "cookies.txt"
         print("🍪 Using cookies.txt for authentication...")
+    elif os.path.exists("/app/cookies.txt"):
+        # Fallback for Docker mount if working dir is not app root
+        base_opts["cookiefile"] = "/app/cookies.txt"
+        print("🍪 Using /app/cookies.txt for authentication...")
 
     attempts = []
 

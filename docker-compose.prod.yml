@@ -14,6 +14,7 @@ services:
         volumes:
             - ./storage:/app/storage
             - ./downloads:/app/downloads
+            - ./cookies.txt:/app/cookies.txt # Mount cookies.txt if present
         env_file:
             - .env
         restart: unless-stopped
@@ -33,6 +34,7 @@ services:
         volumes:
             - ./storage:/app/storage
             - ./downloads:/app/downloads
+            - ./cookies.txt:/app/cookies.txt # Mount cookies.txt if present
         env_file:
             - .env
         restart: unless-stopped
@@ -41,7 +43,11 @@ services:
                 reservations:
                     devices:
                         - driver: nvidia
-                          count: 1
+                          # count: 1 # Often ignored by docker compose with nvidia-container-runtime defaults
+                          # capabilities: [gpu]
+                          # To fix "could not select device driver" error, we often need just the capabilities
+                          # or correct runtime configuration.
+                          # On Vast.ai/Linux with nvidia-container-toolkit properly installed:
                           capabilities: [gpu]
         depends_on:
             - redis

@@ -120,12 +120,58 @@ Open your browser to:
 
 ## Troubleshooting
 
-**GPU Access:**
-If the worker container complains about GPU access, ensure the NVIDIA Container Toolkit is working on the host.
-Verify inside the container:
-```bash
-docker exec -it open_source_clipper_worker nvidia-smi
-```
+**YouTube "Sign in" or "Bot" Errors:**
+If you see errors like `Sign in to confirm you’re not a bot`, you need to provide YouTube cookies.
+
+1.  **Export Cookies:**
+    - Use a browser extension like "Get cookies.txt LOCALLY" (Chrome/Firefox).
+    - Go to YouTube, log in, and export cookies as `cookies.txt`.
+2.  **Upload to Server:**
+    - Upload `cookies.txt` to the root of your project folder (`/root/app/cookies.txt`) on Vast.ai (use SCP or drag-and-drop in Jupyter/VSCode if available).
+3.  **Redeploy:**
+    ```bash
+    docker compose -f docker-compose.prod.yml up --build -d
+    ```
+    The `cookies.txt` file is mounted into the containers automatically.
+
+**GPU Access Error (`could not select device driver "nvidia"`):**
+If the worker fails to start with this error, it means Docker cannot find the NVIDIA driver.
+
+1.  **Verify Host Driver:**
+    ```bash
+    nvidia-smi
+    ```
+    If this fails, the instance is broken. Destroy and create a new one.
+
+2.  **Check NVIDIA Container Toolkit:**
+    ```bash
+    docker info | grep -i runtime
+    ```
+    Should list `nvidia`.
+
+3.  **Fix in Docker Compose:**
+    Sometimes explicitly requesting capabilities is enough (already configured in `docker-compose.prod.yml`):
+    ```yaml
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ```
+    If it still fails, try **reinstalling the NVIDIA Container Toolkit** on the host:
+    ```bash
+    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+    && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+      sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+      tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+    apt-get update
+    apt-get install -y nvidia-container-toolkit
+    nvidia-ctk runtime configure --runtime=docker
+    systemctl restart docker
+    ```
 
 **Re-deploying:**
 ```bash
