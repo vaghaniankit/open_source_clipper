@@ -5,11 +5,15 @@ services:
         build:
             context: .
             dockerfile: Dockerfile
-            target: final
+        # Vast.ai typically uses host networking or specific port mappings.
+        # If running via docker-compose inside the instance, map 8000 to the host port you want to expose.
+        # Or let Vast.ai handle the mapping if using their on-start script.
+        # Here we map 8000:8000, assuming you open port 8000 on Vast.ai dashboard.
         ports:
-            - "20673:20673"
+            - "8000:8000"
         volumes:
             - ./storage:/app/storage
+            - ./downloads:/app/downloads
         env_file:
             - .env
         restart: unless-stopped
@@ -22,10 +26,13 @@ services:
         build:
             context: .
             dockerfile: Dockerfile
-            target: final
-        command: celery -A app.celery_app worker -l info -Q gpu_tasks -c 1
+        # We use the generic 'celery' queue unless you have specific routing set up.
+        # If you separated queues in app code, adjust accordingly.
+        # Based on celery_app.py, default queue is 'celery'.
+        command: celery -A app.celery_app worker -l info -c 1
         volumes:
             - ./storage:/app/storage
+            - ./downloads:/app/downloads
         env_file:
             - .env
         restart: unless-stopped
@@ -39,32 +46,16 @@ services:
         depends_on:
             - redis
 
-    # cpu_worker: Celery worker for CPU-only tasks (does not require GPU)
-    cpu_worker:
-        container_name: open_source_clipper_cpu_worker
-        build:
-            context: .
-            dockerfile: Dockerfile
-            target: final
-        command: celery -A app.celery_app worker -l info -Q cpu_tasks
-        volumes:
-            - ./storage:/app/storage
-        env_file:
-            - .env
-        restart: unless-stopped
-        depends_on:
-            - redis
-
     # beat: Celery Beat scheduler for scheduled/background tasks
     beat:
         container_name: open_source_clipper_beat
         build:
             context: .
             dockerfile: Dockerfile
-            target: final
         command: celery -A app.celery_app beat -l info
         volumes:
             - ./storage:/app/storage
+            - ./downloads:/app/downloads
         env_file:
             - .env
         restart: unless-stopped
@@ -78,6 +69,8 @@ services:
         restart: unless-stopped
         volumes:
             - redis_data:/data
+        ports:
+            - "6379:6379"
 
 volumes:
     redis_data:

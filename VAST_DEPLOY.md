@@ -1,169 +1,134 @@
 # Deploying Open Source Clipper on Vast.ai
 
-This guide assumes you are renting a Vast.ai instance and want to run the app directly from GitHub (no custom Docker image).
+This guide assumes you are renting a Vast.ai instance and want to run the app using **Docker Compose** for a production-like environment (Redis, Celery, Web App all containerized).
 
 ---
 
 ## 1. Create the Vast.ai instance
 
 1. In Vast.ai, create a new instance.
-2. **Template / Image**: choose a PyTorch image, for example:
-   - `pytorch/pytorch:2.0.1-cuda11.8-cudnn8-runtime` (or the PyTorch template with CUDA 11.8).
-3. **Disk space**: at least **100 GB**.
-4. **Ports**: in the Ports panel, add one public port mapping, for example:
-   - `PUBLIC_PORT  →  8384/tcp`  (container port 8384 is what Uvicorn will use).
+2. **Template / Image**: choose a plain **Ubuntu** or **NVIDIA CUDA** image. Since we are using Docker Compose to build our own image, the base OS image matters less, but `nvidia/cuda:11.8.0-base-ubuntu22.04` or similar is good.
+   - *Note*: You can also just use the default `Ubuntu 22.04` template, as long as you install the NVIDIA Container Toolkit (usually pre-installed on Vast instances).
+3. **Instance Type**: 1x RTX 3060 Ti (or better).
+4. **Disk space**: at least **50 GB** (Docker images + video storage).
+5. **Ports**:
+   - The app listens on port `8000` inside the container.
+   - In Vast.ai "Edit Image & Config" -> "Port Mapping", map a public port to `8000`.
+   - Example: `8000/tcp` mapped to `(Random/Assigned Port)`.
 
-Record your instance **IP** and **PUBLIC_PORT** from Vast.ai – you will need them later.
-
----
-
-## 2. Set environment variables (in Vast.ai UI)
-
-In the Vast.ai instance settings, add at least:
-
-```text
-OPENAI_API_KEY=<your-real-openai-api-key>
-```
-
-Optionally (defaults are fine if you skip these):
-
-```text
-REDIS_URL=redis://localhost:6379/0
-REDIS_BACKEND=redis://localhost:6379/0
-```
-
-> Do **not** commit the real `OPENAI_API_KEY` to GitHub. Keep it only in Vast.ai env or a private `.env`.
+Record your instance **IP** and **PUBLIC_PORT** from Vast.ai.
 
 ---
 
-## 3. Connect to the instance
+## 2. Connect to the instance
 
-Use **Open in Jupyter** or SSH from the Vast.ai UI, then open a terminal.
-
-All commands below run **inside that terminal**.
-
----
-
-## 4. Get the code from GitHub
+Use SSH from your terminal:
 
 ```bash
-cd /workspace
-rm -rf app
+ssh -p <PORT> root@<IP>
+```
 
+---
+
+## 3. Install Docker & Docker Compose (if not present)
+
+Most Vast.ai images have Docker, but you might need the Compose plugin.
+
+```bash
+# Update apt
+apt-get update
+
+# Install Docker Compose plugin
+apt-get install -y docker-compose-plugin
+
+# Verify
+docker compose version
+```
+
+If `docker compose` is not available, install it manually:
+
+```bash
+curl -SL https://github.com/docker/compose/releases/download/v2.29.1/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+```
+
+---
+
+## 4. Get the code
+
+```bash
+cd /root
 git clone https://github.com/tariqbaluch/open_source_clipper.git app
 cd app
 ```
 
 ---
 
-## 5. Install system packages
+## 5. Configure Environment
+
+Create a `.env` file from the example:
 
 ```bash
-apt-get update && apt-get install -y \
-  ffmpeg \
-  libsndfile1 \
-  redis-server \
-  git \
-  curl
+cp .env.example .env
+nano .env
 ```
+
+**Crucial Settings for Docker Compose:**
+- `REDIS_URL=redis://redis:6379/0` (Use the service name `redis`)
+- `REDIS_BACKEND=redis://redis:6379/0`
+- `OPENAI_API_KEY=sk-...` (Your key)
 
 ---
 
-## 6. Install Python dependencies
+## 6. Build and Run
+
+Run the production compose file:
 
 ```bash
-# Inside /workspace/app
-pip install -r requirements.txt
-
-# Ensure compatible PyTorch (CUDA 11.8 wheel)
-pip install torch torchvision torchaudio \
-  --index-url https://download.pytorch.org/whl/cu118
-
-# Extra dependency used by FastAPI
-pip install itsdangerous
+docker compose -f docker-compose.prod.yml up --build -d
 ```
+
+- `--build`: Rebuilds the images.
+- `-d`: Detached mode (runs in background).
 
 ---
 
-## 7. Create storage folders
+## 7. Check Status
+
+Check if containers are running:
 
 ```bash
-mkdir -p storage/{videos,audio,pipeline,exports,data} downloads logs
+docker compose -f docker-compose.prod.yml ps
 ```
 
----
-
-## 8. Start Redis
+View logs:
 
 ```bash
-redis-server --daemonize yes
+docker compose -f docker-compose.prod.yml logs -f
 ```
-
-This will run Redis in the background.
 
 ---
 
-## 9. Start the Celery worker
+## 8. Access the App
 
-From `/workspace/app`:
+Open your browser to:
 
+`http://<VAST_IP>:<MAPPED_PORT_FOR_8000>`
+
+---
+
+## Troubleshooting
+
+**GPU Access:**
+If the worker container complains about GPU access, ensure the NVIDIA Container Toolkit is working on the host.
+Verify inside the container:
 ```bash
-nohup celery -A app.celery_app worker --loglevel=info \
-  > logs/celery.log 2>&1 &
+docker exec -it open_source_clipper_worker nvidia-smi
 ```
 
-- This starts the Celery worker in the background.
-- Logs will be written to `logs/celery.log`.
-
-> On Vast.ai (Linux) we do **not** need `--pool=solo`; the default prefork pool is fine.
-
----
-
-## 10. Start the FastAPI app (Uvicorn)
-
-Still in `/workspace/app`, run:
-
+**Re-deploying:**
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8384
+git pull
+docker compose -f docker-compose.prod.yml up --build -d
 ```
-
-- Use the **container port** you mapped in the Vast.ai ports panel. In this example it is `8384`.
-
-Keep this process running (do **not** close the terminal tab).
-
----
-
-## 11. Open the app in the browser
-
-Use the IP and public port from Vast.ai. If Vast shows:
-
-```text
-IP:      79.xx.xx.xx
-PORT:    29164
-Mapping: 79.xx.xx.xx:29164  →  8384/tcp
-```
-
-Then open in your browser:
-
-```text
-http://79.xx.xx.xx:29164/
-```
-
-The app will open directly into the wizard (Google login is bypassed in this build).
-
----
-
-## 12. Stopping / restarting
-
-- To stop Uvicorn: press `Ctrl + C` in the Uvicorn terminal.
-- To restart after pulling new code:
-  ```bash
-  cd /workspace/app
-  git pull
-  # (re-run pip install if requirements changed)
-  pkill -f "celery"
-  nohup celery -A app.celery_app worker --loglevel=info > logs/celery.log 2>&1 &
-  uvicorn app.main:app --host 0.0.0.0 --port 8384
-  ```
-
-Share this file (`VAST_DEPLOY.md`) with anyone who needs to run the app on Vast.ai.

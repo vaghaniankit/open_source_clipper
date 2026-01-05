@@ -1,43 +1,42 @@
-# Quick run commands for Vast.ai
+# Quick run commands for Vast.ai (Docker Compose)
 
-Run these in order inside the Jupyter terminal on the Vast.ai instance.
+Run these in order inside the Jupyter terminal or SSH on the Vast.ai instance.
 
 1. **Go to workspace and clone the repo**
 ```bash
-cd /workspace
-rm -rf app
+cd /root
 git clone https://github.com/tariqbaluch/open_source_clipper.git app
 cd app
 ```
 
-2. **Install system packages**
+2. **Setup Environment**
 ```bash
-apt-get update && apt-get install -y \
-  ffmpeg \
-  libsndfile1 \
-  redis-server \
-  git \
-  curl
+cp .env.example .env
+# Edit .env to add your OPENAI_API_KEY and other settings
+# nano .env
 ```
 
-3. **Install Python dependencies**
+3. **Install Docker Compose (if missing)**
 ```bash
-pip install -r requirements.txt
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-pip install itsdangerous
+# Check if installed
+docker compose version
+
+# If not installed:
+curl -SL https://github.com/docker/compose/releases/download/v2.29.1/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
 ```
 
-4. **Prepare folders, start Redis and Celery worker (background)**
+4. **Build and Start Production Stack**
 ```bash
-mkdir -p storage/{videos,audio,pipeline,exports,data} downloads logs
-redis-server --daemonize yes
-nohup celery -A app.celery_app worker --loglevel=info > logs/celery.log 2>&1 &
+docker compose -f docker-compose.prod.yml up --build -d
 ```
 
-5. **Start the FastAPI app (Uvicorn)**
+5. **Verify**
 ```bash
-cd /workspace/app
-uvicorn app.main:app --host 0.0.0.0 --port 8384
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f
 ```
 
-Replace `8384` with the container port that Vast.ai mapped from the public port if it is different.
+6. **Access App**
+Open `http://<VAST_IP>:<MAPPED_PORT>` in your browser.

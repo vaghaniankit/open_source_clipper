@@ -12,8 +12,10 @@ tensorflow>=2.17.0
 tensorflow-hub>=0.16.0
 yt-dlp>=2024.8.6
 whisperx>=3.1.1
-torch>=2.3.0
-torchaudio>=2.3.0
+# torch and torchaudio are installed separately in Dockerfile to ensure CUDA support.
+# If running locally, install them with: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+# torch>=2.3.0
+# torchaudio>=2.3.0
 ctranslate2>=4.3.1
 
 # Web backend & queue
