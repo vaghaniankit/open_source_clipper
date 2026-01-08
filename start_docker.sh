@@ -1,5 +1,7 @@
 #!/bin/bash
 # This script is to be run on the HOST machine
+export NVIDIA_VISIBLE_DEVICES=all
+# docker-compose -f docker-compose.prod.yml up --build -d
 
 # List all Docker images
 echo "Listing all Docker images before starting..."
