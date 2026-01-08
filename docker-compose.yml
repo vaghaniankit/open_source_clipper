@@ -81,6 +81,7 @@ services:
             - REDIS_URL=redis://redis:6379/0
             - CELERY_BROKER_URL=redis://redis:6379/0
             - CELERY_RESULT_BACKEND=redis://redis:6379/0
+            - YOUTUBE_COOKIE_FILE=/app/cookies.txt
         depends_on:
             - redis
 

@@ -12,7 +12,7 @@ cd app
 2. **Setup Environment**
 ```bash
 cp .env.example .env
-# Edit .env to add your OPENAI_API_KEY and other settings
+# Edit .env to add your OPENAI_API_KEY, YOUTUBE_COOKIE_FILE and other settings
 # nano .env
 ```
 

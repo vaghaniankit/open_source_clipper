@@ -1,5 +1,6 @@
 import yt_dlp
 import os
+from app.config import settings
 
 
 def download_youtube(url, choice="video", quality="best", filename=None):
@@ -23,14 +24,8 @@ def download_youtube(url, choice="video", quality="best", filename=None):
     }
 
     # If cookies.txt exists as a file, load it automatically
-    # Check multiple locations: current dir, app root
-    cookie_file = None
-    if os.path.isfile("cookies.txt"):
-        cookie_file = "cookies.txt"
-    elif os.path.isfile("/app/cookies.txt"):
-        cookie_file = "/app/cookies.txt"
-    
-    if cookie_file:
+    cookie_file = settings.YOUTUBE_COOKIE_FILE
+    if cookie_file and os.path.isfile(cookie_file):
         base_opts["cookiefile"] = cookie_file
         print(f"🍪 Using cookies from {cookie_file} for authentication...")
     else:

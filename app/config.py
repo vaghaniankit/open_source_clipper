@@ -28,5 +28,7 @@ class Settings:
     GOOGLE_CLIENT_SECRET: str = os.environ.get("GOOGLE_CLIENT_SECRET", "")
     GOOGLE_REDIRECT_URI: str = os.environ.get("GOOGLE_REDIRECT_URI", "http://127.0.0.1:8000/auth/callback")
 
+    # YouTube Downloader Configuration
+    YOUTUBE_COOKIE_FILE: str = os.environ.get("YOUTUBE_COOKIE_FILE", "")
 
 settings = Settings()

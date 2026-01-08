@@ -78,6 +78,7 @@ nano .env
 - `REDIS_URL=redis://redis:6379/0` (Use the service name `redis`)
 - `REDIS_BACKEND=redis://redis:6379/0`
 - `OPENAI_API_KEY=sk-...` (Your key)
+- `YOUTUBE_COOKIE_FILE=/app/cookies.txt` (Path inside the container)
 
 ---
 
@@ -121,18 +122,26 @@ Open your browser to:
 ## Troubleshooting
 
 **YouTube "Sign in" or "Bot" Errors:**
-If you see errors like `Sign in to confirm you’re not a bot`, you need to provide YouTube cookies.
+If you see errors like `Sign in to confirm you’re not a bot`, you **MUST** provide valid YouTube cookies.
 
 1.  **Export Cookies:**
     - Use a browser extension like "Get cookies.txt LOCALLY" (Chrome/Firefox).
-    - Go to YouTube, log in, and export cookies as `cookies.txt`.
+    - **Important:** Ensure you are logged into YouTube in the browser before exporting.
+    - Export the file as `cookies.txt`.
 2.  **Upload to Server:**
-    - Upload `cookies.txt` to the root of your project folder (`/root/app/cookies.txt`) on Vast.ai (use SCP or drag-and-drop in Jupyter/VSCode if available).
-3.  **Redeploy:**
-    ```bash
-    docker compose -f docker-compose.prod.yml up --build -d
-    ```
-    The `cookies.txt` file is mounted into the containers automatically.
+    - Upload `cookies.txt` to the `/root/app/` directory on your Vast.ai instance (same folder as `docker-compose.prod.yml`).
+    - You can use `scp` or the Jupyter upload interface.
+3.  **Verify & Restart:**
+    - Check if the file exists: `ls -l /root/app/cookies.txt`
+    - Restart the containers:
+      ```bash
+      docker compose -f docker-compose.prod.yml down
+      docker compose -f docker-compose.prod.yml up -d
+      ```
+    - Check logs to confirm cookies are loaded:
+      ```bash
+      docker compose -f docker-compose.prod.yml logs web | grep "cookies"
+      ```
 
 **GPU Access Error (`could not select device driver "nvidia"`):**
 If the worker fails to start with this error, it means Docker cannot find the NVIDIA driver.
