@@ -22,14 +22,19 @@ def download_youtube(url, choice="video", quality="best", filename=None):
         # "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
 
-    # If cookies.txt exists, load it automatically
-    if os.path.exists("cookies.txt"):
-        base_opts["cookiefile"] = "cookies.txt"
-        print("🍪 Using cookies.txt for authentication...")
-    elif os.path.exists("/app/cookies.txt"):
-        # Fallback for Docker mount if working dir is not app root
-        base_opts["cookiefile"] = "/app/cookies.txt"
-        print("🍪 Using /app/cookies.txt for authentication...")
+    # If cookies.txt exists as a file, load it automatically
+    # Check multiple locations: current dir, app root
+    cookie_file = None
+    if os.path.isfile("cookies.txt"):
+        cookie_file = "cookies.txt"
+    elif os.path.isfile("/app/cookies.txt"):
+        cookie_file = "/app/cookies.txt"
+    
+    if cookie_file:
+        base_opts["cookiefile"] = cookie_file
+        print(f"🍪 Using cookies from {cookie_file} for authentication...")
+    else:
+        print("⚠️ No cookies.txt file found, or the path points to a directory. YouTube downloads may fail with 'Sign in' errors.")
 
     attempts = []
 
