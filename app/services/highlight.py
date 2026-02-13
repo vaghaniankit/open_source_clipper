@@ -116,54 +116,45 @@ def map_duration_preset(preset: str | None) -> (float, float):
 
 # ---------------- PROMPT ----------------
 SYSTEM_PROMPT = """
-You are a professional short-form video editor.
+You are an expert viral video editor for TikTok, YouTube Shorts, and Instagram Reels.
 
-You will be given transcript lines with timestamps and several simple numeric/audio features per line:
-- energy: number where higher means louder/more intense audio.
-- scene_id: integer identifying which visual scene the line belongs to (0, 1, 2, ...).
-- near_cut: true/false indicating that the line is very close to a natural scene/shot cut.
-- tags: zero or more audio tags like "music" or "laughter".
-- excitement: a 0–1 score combining energy, cuts and tags (higher means more exciting).
+You will be given a transcript with timestamps and audio/visual features. Your task is to identify the most engaging, shareable, and viral-worthy moments to be turned into short clips.
 
-DO NOT invent or rewrite text.
-Your job: confidently pick engaging *time ranges* (start_time and end_time in seconds) that mark interesting
-30–90 second candidate highlights (hooks, emotional moments, surprising lines) in the provided transcript.
+**Input Features per Transcript Line:**
+- `energy`: Higher values mean louder or more intense audio.
+- `scene_id`: Identifies distinct visual scenes.
+- `near_cut`: `true` if the line is near a scene change, which is a good place to start/end a clip.
+- `tags`: Audio events like "music" or "laughter".
+- `excitement`: A 0–1 score combining the features above.
 
-**Important rules (follow exactly):**
-- Return JSON only.
-- Pay close attention to the transcript *content* first.
-- Use the features as guidance:
-  - Higher energy and excitement usually mean more intense/emotional moments.
-  - near_cut=true is often a good place to start or end a highlight so the cut feels natural.
-  - tags like "laughter" suggest funny moments; "music" can suggest hype or build-up.
-  - Do NOT rely on any single feature alone; only choose highlights where the spoken content is strong
-    AND the features support it.
-- You should almost always return several clips when the transcript is non-empty. It is better to
-  select a few reasonable candidates than to be over-cautious and return nothing.
-- When the video is long and has many intense or exciting moments (for example, a sports match with
-  multiple goals or big chances), prefer to surface **multiple distinct highlights** instead of a
-  single long summary clip. Treat each clearly exciting moment (e.g., each goal sequence) as its
-  own candidate highlight whenever the timestamps allow.
-- For short or low-intensity videos, still pick the most interesting parts (even if subtle) rather
-  than returning zero clips.
-- For each clip return: id, start_time, end_time, category, title, caption, hashtags, description,
-  scores (hook, surprise_novelty, emotion,
-  clarity_self_contained, shareability, cta_potential between 0 and 5), overall virality_score (average), unsafe (true/false), why (short).
-- Based on the scores, generate overall "virality_score" (average).
-- start_time and end_time should be numeric seconds (e.g., 123.45).
-- Use only timestamps visible in the transcript lines (do not invent times outside the range shown).
-- The client code will snap your start/end to transcript line boundaries and enforce exact duration.
-- Prefer highlight boundaries that align with scene changes (near_cut=true) when possible.
-- For each chosen highlight, assign one category:
-   - "Hook"
-   - "Tip"
-   - "Insight"
-   - "Story"
-   - "Conclusion"
-- For each chosen highlight, generate title (catchy 3–6 words, good for social media title overlay),
-  caption (short 1-sentence subtitle text, conversational style, emoji-friendly), 5–8 trending hashtags relevant to the highlight
-  and longer description (2–3 sentences) suitable for YouTube/Facebook.
-- Example output:
+**Your Goal:**
+Select the best time ranges for short clips (30–90 seconds) that have high potential to go viral. Focus on content that is emotionally engaging, surprising, has a strong hook, or a clear call-to-action.
+
+**Strict Rules:**
+1.  **JSON Only:** Your output must be a valid JSON object.
+2.  **Content is King:** Prioritize the spoken content. Use the features as secondary signals to support your choices. High excitement or energy scores are good indicators, but the content must be compelling on its own.
+3.  **Multiple Clips:** Always return several distinct highlight options, even if the source video is low-energy. Find the *most* interesting parts. For action-packed videos (e.g., sports), create a separate clip for each key moment.
+4.  **Scoring is Crucial:** For each clip, you must provide scores for the following categories on a scale of 0 to 5:
+    - `hook`: How well the first 3 seconds grab attention.
+    - `surprise_novelty`: How unexpected or fresh the content is.
+    - `emotion`: The intensity of the emotional arc (humor, inspiration, etc.).
+    - `clarity_self_contained`: How easy it is to understand without external context.
+    - `shareability`: The likelihood someone would share this with others.
+    - `cta_potential`: The potential for a call-to-action.
+5.  **Calculate Virality Score:** Based on your scores, calculate a `virality_score` for each clip. This should be the weighted average of the scores.
+6.  **Metadata Generation:** For each clip, provide:
+    - `id`: A unique identifier.
+    - `start_time`, `end_time`: In seconds (e.g., `12.34`).
+    - `category`: "Hook", "Tip", "Insight", "Story", or "Conclusion".
+    - `title`: A catchy 3–6 word title.
+    - `caption`: A short, emoji-friendly sentence.
+    - `hashtags`: 5–8 relevant and trending hashtags.
+    - `description`: A 2–3 sentence description for platforms like YouTube.
+    - `unsafe`: `true` or `false`.
+    - `why`: A brief justification for your choice.
+
+**Example JSON Output:**
+```json
 {{
   "clips": [
     {{
@@ -171,14 +162,14 @@ Your job: confidently pick engaging *time ranges* (start_time and end_time in se
       "start_time": 12.34,
       "end_time": 47.89,
       "category": "Hook",
-      "title": "catchy 3–6 words, good for social media title overlay",
-      "caption": "short 1-sentence subtitle text, conversational style, emoji-friendly",
-      "hashtags": "#financialtips, #wealth",
-      "description": "longer description (2–3 sentences) suitable for YouTube/Facebook",
-      "scores": {{ "hook":5, "surprise_novelty":4, "emotion":4, "clarity_self_contained":5, "shareability":4, "cta_potential":3, "unsafe": false }},
-      "virality_score": 5.1,
-      "unsafe": "false",
-      "why": "short reason"
+      "title": "You Won't Believe This Simple Trick",
+      "caption": "This is a game-changer for daily productivity! 🤯",
+      "hashtags": "#lifehack #productivity #mindblown #tiptok",
+      "description": "Discover a simple yet powerful technique to optimize your workflow. This method has helped thousands save time and reduce stress.",
+      "scores": {{ "hook": 5, "surprise_novelty": 4, "emotion": 4, "clarity_self_contained": 5, "shareability": 4, "cta_potential": 3 }},
+      "virality_score": 4.5,
+      "unsafe": false,
+      "why": "Strong hook, surprising content, and highly shareable."
     }}
   ]
 }}
@@ -192,26 +183,25 @@ strong, still choose the best available parts (do NOT return an empty clips list
 is completely empty or unusable).
 """
 
+def time_str_to_seconds(time_str: str) -> float:
+    """Convert MM:SS.ms string to seconds."""
+    if isinstance(time_str, (int, float)):
+        return float(time_str)
+    parts = time_str.split(":")
+    if len(parts) == 2:
+        minutes = int(parts[0])
+        seconds = float(parts[1])
+        return minutes * 60 + seconds
+    return float(time_str)
+
 # ---------------- HELPERS ----------------
 def build_transcript_block(transcript: List[Dict]) -> str:
     """Format transcript for prompt."""
     lines = []
     for t in transcript:
         text = t["text"].replace("\n", " ").strip()
-        energy = t.get("energy")
-        scene_id = t.get("scene_id")
-        near_cut = t.get("near_cut")
-        tags = t.get("tags") or []
-        excitement = t.get("excitement")
-
-        energy_str = "" if energy is None else f"{energy:.4f}"
-        scene_str = "" if scene_id is None else str(scene_id)
-        near_cut_str = "" if near_cut is None else str(bool(near_cut))
-        tags_str = ",".join(tags) if tags else ""
-        excitement_str = "" if excitement is None else f"{float(excitement):.4f}"
-
         lines.append(
-            f"{t['start']:.2f} | {t['end']:.2f} | energy={energy_str} | scene_id={scene_str} | near_cut={near_cut_str} | tags={tags_str} | excitement={excitement_str} | text={text}"
+            f"[{t['start']:.2f} - {t['end']:.2f}] {text}"
         )
     return "\n".join(lines)
 
@@ -337,13 +327,14 @@ def materialize_from_times(raw_clips: List[Dict], transcript: List[Dict], min_se
     effective_min_sec = max(5.0, float(min_sec))
 
     for clip in raw_clips:
-        st = clip.get("start_time")
-        et = clip.get("end_time")
-        if st is None or et is None:
+        st_str = clip.get("start_time")
+        et_str = clip.get("end_time")
+        if st_str is None or et_str is None:
             print(f"⚠️ Skipping invalid clip (missing start_time/end_time): {clip}")
             continue
         try:
-            st = float(st); et = float(et)
+            st = time_str_to_seconds(st_str)
+            et = time_str_to_seconds(et_str)
         except Exception:
             print(f"⚠️ Skipping invalid clip (non-float times): {clip}")
             continue
@@ -461,7 +452,8 @@ def materialize_from_times(raw_clips: List[Dict], transcript: List[Dict], min_se
             "start_idx": si2,
             "end_idx": ei2,
             "text": text,
-            "adjustment_reason": reason
+            "adjustment_reason": reason,
+            "viral_score": clip.get("viral_score", 0)
         })
         materialized.append(clip_out)
     print(f"🧩 Materialized {len(materialized)} valid clips from {len(raw_clips)} raw entries.")
@@ -623,6 +615,9 @@ def derive_sound_event_raw_clips(transcript: List[Dict], min_gap: float = 5.0) -
         return []
 
     interesting_tags = {
+        "humor", 
+        "laugh", 
+        "relatable"
         "laughter",
         "music",
         "gunshot",
@@ -711,6 +706,10 @@ def assign_unique_ids(clips: List[Dict]) -> List[Dict]:
         clip["id"] = clip_id
         clip["filename"] = f"highlight_{clip_id}.mp4"
     return clips
+ 
+def filter_clips_by_virality(clips: List[Dict], min_virality: float = 5.0) -> List[Dict]:
+    """Filter out clips that do not meet the minimum virality score."""
+    return [c for c in clips if c.get("viral_score", 0) >= min_virality]
 
 def escape_font_path_for_ffmpeg(path: str) -> str:
     """
@@ -781,176 +780,14 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
 
     print(f"✅ LLM returned {len(raw_clips)} raw clip candidates across chunks.")
 
-    # Heuristic fallback: ensure we have at least one candidate highlight per
-    # cluster of interesting sound events (within ~5 seconds), based purely on
-    # the audio tags attached to the transcript. This helps align the number of
-    # clips with the number of clear sound moments when the manager tests with
-    # videos full of discrete effects (laughter, goals, fireworks, farts, etc.).
-    sound_event_clips = derive_sound_event_raw_clips(transcript, min_gap=5.0)
-    raw_clips.extend(sound_event_clips)
-
     # Materialize -> snap times to transcript -> enforce durations -> rebuild text
     clips = materialize_from_times(raw_clips, transcript, min_sec=min_sec, max_sec=max_sec)
-
-    # compute overall scores locally (weights)
-    WEIGHTS = {"hook":0.25,"surprise_novelty":0.15,"emotion":0.15,"clarity_self_contained":0.15,"shareability":0.15,"cta_potential":0.15}
-    for c in clips:
-        sc = c.get("scores", {})
-        subtotal = sum(WEIGHTS[k] * max(0, min(5, int(sc.get(k, 0)))) for k in WEIGHTS)
-        base_overall = round(subtotal / 5 * 100, 1)
-
-        # position-aware adjustment: gently prefer clips that are not only at the very start
-        mid = (c["start"] + c["end"]) / 2.0
-        pos_frac = 0.0
-        if total_dur > 0:
-            pos_frac = max(0.0, min(1.0, mid / total_dur))
-        # 80% content-driven, 20% position-driven (later clips can get a small boost)
-        adjusted = base_overall * (0.8 + 0.2 * pos_frac)
-        c["overall"] = round(adjusted, 1)
-
-    # dedupe near-duplicates (keep best)
-    clips = deduplicate_clips_keep_best(clips, overlap_threshold=0.7)
-
-    # optional: enforce time diversity (min gap) to spread clips across timeline.
-    # We keep this gentle so we don't collapse many good candidates down to just
-    # one or two clips on long videos.
-    def enforce_time_diversity_simple(clips_list: List[Dict], min_gap: float = 10.0) -> List[Dict]:
-        clips_list.sort(key=lambda x: -x["overall"]) 
-        selected = []
-        occupied_until = float("-inf")
-        for c in clips_list:
-            if c["start"] >= occupied_until + min_gap:
-                selected.append(c)
-                occupied_until = c["end"]
-        return sorted(selected, key=lambda c: c["start"]) 
-
-    clips = merge_adjacent_clips(clips, max_gap=5.0, max_duration=MAX_SEC)
-
-    clips_before_diversity = list(clips)
-    # Only apply diversity pruning when we have a lot of clips; otherwise keep
-    # all of them so long videos with many funny moments can surface several
-    # highlights.
-    if len(clips) > 8:
-        clips = enforce_time_diversity_simple(clips, min_gap=10.0)
 
     # assign unique IDs and filenames
     clips = assign_unique_ids(clips)
 
     # final top-K
     top = clips[:TOP_K]
-
-    # Generate a thumbnail for each final clip so the UI can show a cover image.
-    # We grab a single frame from the source video at the clip's start time and
-    # save it under storage/exports/<job_id>/thumbs.
-    try:
-        job_path = Path(job_dir)
-        job_id = job_path.name
-        exports_dir = STORAGE_DIR / "exports" / job_id / "thumbs"
-        exports_dir.mkdir(parents=True, exist_ok=True)
-
-        for clip in top:
-            try:
-                start = float(clip.get("start", 0.0) or 0.0)
-            except Exception:
-                start = 0.0
-            start = max(0.0, start)
-
-            clip_id = clip.get("id") or "clip"
-            thumb_name = f"{clip_id}.jpg"
-            thumb_path = exports_dir / thumb_name
-
-            cmd = [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(start),
-                "-i",
-                str(input_video),
-                "-vframes",
-                "1",
-                "-q:v",
-                "3",
-                str(thumb_path),
-            ]
-
-            try:
-                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                rel = thumb_path.relative_to(STORAGE_DIR)
-                clip["thumbnail_url"] = f"/media/{rel.as_posix()}"
-            except Exception as e:
-                print(f"⚠️ Failed to generate thumbnail for {clip_id}: {e}")
-    except Exception as e:
-        print(f"⚠️ Thumbnail generation skipped due to error: {e}")
-
-    # If we still ended up with no clips, try a heuristic fallback so the
-    # caller always gets at least one highlight for non-empty transcripts.
-    if not top:
-        print("⚠️ No clips after LLM + filters. Falling back to heuristic excitement-based segment.")
-        start_all = transcript[0]["start"]
-        end_all = transcript[-1]["end"]
-        total = max(0.0, end_all - start_all)
-        if total >= 10.0:
-            # scan for a ~30s window with highest average excitement
-            target_window = 30.0
-            best_score = -1.0
-            best_start = start_all
-            best_end = min(end_all, start_all + target_window)
-
-            # precompute a simple per-line excitement, defaulting to 0
-            ex_values = []
-            for seg in transcript:
-                val = seg.get("excitement")
-                try:
-                    ex_values.append(float(val) if val is not None else 0.0)
-                except Exception:
-                    ex_values.append(0.0)
-
-            # sliding window over transcript lines
-            n = len(transcript)
-            for i in range(n):
-                w_start = transcript[i]["start"]
-                w_end = w_start + target_window
-                if w_start >= end_all:
-                    break
-                # extend j until we cover ~target_window or run out of transcript
-                total_ex = 0.0
-                count = 0
-                j = i
-                while j < n and transcript[j]["end"] <= w_end:
-                    total_ex += ex_values[j]
-                    count += 1
-                    j += 1
-                if count == 0:
-                    continue
-                avg_ex = total_ex / count
-                if avg_ex > best_score:
-                    best_score = avg_ex
-                    best_start = w_start
-                    best_end = min(end_all, max(best_start + 10.0, transcript[min(j, n-1)]["end"]))
-
-            heur_start = best_start
-            heur_end = best_end
-            if heur_end > heur_start:
-                overall = 60.0
-                if clips_before_diversity:
-                    overall = max(c.get("overall", overall) for c in clips_before_diversity)
-                fallback = {
-                    "id": "clip_001",
-                    "start": round(heur_start, 3),
-                    "end": round(heur_end, 3),
-                    "duration": round(heur_end - heur_start, 3),
-                    "category": "Story",
-                    "title": "Highlight segment",
-                    "caption": "Most interesting part of this video.",
-                    "hashtags": "",
-                    "description": "Automatically chosen highlight segment.",
-                    "scores": {},
-                    "overall": overall,
-                    "why": "Fallback heuristic when LLM did not propose any strong clip.",
-                }
-                top = [fallback]
-
-    print(f"🎯 Final highlights: {len(top)} clips (top {TOP_K}).")
 
     # ensure job_dir exists and write highlights.json inside it
     os.makedirs(job_dir, exist_ok=True)
@@ -966,39 +803,3 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
         "clips": top,
     }
 
-# ---------------- MAIN ----------------
-if __name__ == "__main__":
-    input_video = "input.mp4"         # adjust path
-    transcript_path = "transcript.json"
-
-    result = generate_highlights(input_video=input_video, transcript_path=transcript_path, job_dir=HIGHLIGHT_DIR)
-
-    # export with ffmpeg (use -ss before -i for faster keyframe cut; consider re-encoding if needed)
-    for c in result["clips"]:
-        start, end = c["start"], c["end"]
-        caption = c.get("caption") or ""
-        output = os.path.join(HIGHLIGHT_DIR, c["category"] + "_" + c["filename"])
-
-        safe_caption = escape_caption(caption)
-        safe_font = escape_font_path_for_ffmpeg(FONT_PATH)
-
-        vf = ",".join([
-            "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos",
-            "unsharp=5:5:1.0:5:5:0.0",
-            "crop=1080:1920",
-        ])
-
-        cmd = [
-            "ffmpeg", "-y",
-            "-ss", str(start),
-            "-to", str(end),
-            "-i", input_video,
-            "-vf", vf,
-            "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
-            "-c:a", "copy",
-            output
-        ]
-        print(f"➡️ Exporting {c['id']} {start:.2f}-{end:.2f} → {output}  ({c.get('adjustment_reason','')})")
-        subprocess.run(cmd, check=True)
-
-    print("✅ All exports done.")

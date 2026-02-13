@@ -152,7 +152,7 @@ def _analyze_audio_events_yamnet(audio_path: str) -> List[Dict]:
         # Map YAMNet's rich label space into a smaller set of tags we care
         # about for highlight selection.
         label = "none"
-        if "laughter" in name_lower or "giggle" in name_lower or "chuckle" in name_lower:
+        if "laugh" in name_lower or "laughter" in name_lower or "giggle" in name_lower or "chuckle" in name_lower:
             label = "laughter"
         elif "music" in name_lower or "singing" in name_lower or "choir" in name_lower:
             label = "music"

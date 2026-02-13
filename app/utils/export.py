@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 from typing import Literal, Optional
+from app.utils.subtitles import escape_path_for_ffmpeg
 
 Aspect = Literal["1:1", "16:9", "9:16"]
 
@@ -24,12 +25,9 @@ def export_with_aspect(input_path: str, output_path: str, aspect: Aspect = "9:16
     base_vf = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p"
 
     if subtitle_path:
-        # Import here to avoid circular imports
-        from .subtitles import escape_path_for_ffmpeg
-
         subs_escaped = escape_path_for_ffmpeg(subtitle_path)
-        # Keep the filter simple so subtitles reliably render across platforms.
-        vf = f"subtitles={subs_escaped},{base_vf}"
+        # Use the 'ass' filter for ASS subtitles
+        vf = f"{base_vf},ass={subs_escaped}"
     else:
         vf = base_vf
 
