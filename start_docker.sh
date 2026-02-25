@@ -1,7 +1,7 @@
 #!/bin/bash
 # This script is to be run on the HOST machine
 export NVIDIA_VISIBLE_DEVICES=all
-# docker-compose -f docker-compose.prod.yml up --build -d
+# docker-compose up --build -d
 
 # List all Docker images
 echo "Listing all Docker images before starting..."
@@ -30,7 +30,7 @@ sudo systemctl restart docker
 
 # Build the images
 echo "Building Docker images with docker-compose (production config)..."
-docker compose -f docker-compose.prod.yml build
+docker compose build
 
 # Fix storage permissions
 echo "Fixing storage permissions..."
@@ -38,7 +38,7 @@ sudo chown -R 1000:1000 ./storage
 
 # Start the services
 echo "Starting services using docker-compose..."
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 
 echo "All steps completed. Services should be running."
 
