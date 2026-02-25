@@ -4,7 +4,8 @@ import json
 import os
 import subprocess
 import shlex
-from typing import List, Dict
+import threading
+from typing import List, Dict, Callable, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from openai import OpenAI
@@ -323,22 +324,31 @@ def split_transcript(transcript: List[Dict], chunk_duration: float, overlap: flo
         cur_start = cur_end - overlap
     return chunks
 
-def identify_and_score_chunk(chunk_transcript: List[Dict], chunk_id: int, user_prompt: str | None = None) -> Dict:
+def identify_and_score_chunk(chunk_transcript: List[Dict], chunk_id: int, user_prompt: str | None = None, token_callback: Optional[Callable[[int], None]] = None) -> Dict:
     """Ask LLM for start_time/end_time ranges for highlights (single chunk)."""
     prompt_hint = ""
     if user_prompt:
         prompt_hint = f"The user specifically requested: {user_prompt.strip()}\n\n"
     prompt = USER_TEMPLATE.format(prompt_hint=prompt_hint, lines=build_transcript_block(chunk_transcript), k=TOP_K)
     try:
-        completion = client.chat.completions.create(
+        response_stream = client.chat.completions.create(
             model=MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
+            stream=True,
         )
-        data = json.loads(completion.choices[0].message.content)
+        
+        collected_content = ""
+        for chunk in response_stream:
+            content = chunk.choices[0].delta.content or ""
+            collected_content += content
+            if token_callback and content:
+                token_callback(1)
+
+        data = json.loads(collected_content)
         for c in data.get("clips", []):
             c["chunk_id"] = chunk_id
         return data
@@ -823,7 +833,8 @@ def escape_caption(caption: str) -> str:
 
 def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
                         min_sec: float = MIN_SEC, max_sec: float = MAX_SEC,
-                        user_prompt: str | None = None) -> dict:
+                        user_prompt: str | None = None,
+                        progress_callback: Optional[Callable[[float], None]] = None) -> dict:
     """Run the highlight generation pipeline and return clips + paths.
 
     This wraps the existing script logic so it can be called from Celery or other
@@ -858,16 +869,48 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
 
     # run LLM on each chunk in parallel
     raw_clips: List[Dict] = []
+    
+    # Progress tracking for streaming (heuristic: ~300 stream events per chunk)
+    ESTIMATED_STREAM_CHUNKS = 300
+    total_estimated_stream_events = max(1, len(chunks) * ESTIMATED_STREAM_CHUNKS)
+    completed_stream_events = 0
+    progress_lock = threading.Lock()
+
+    def on_token(count):
+        nonlocal completed_stream_events
+        with progress_lock:
+            completed_stream_events += count
+            if progress_callback:
+                # LLM analysis is roughly 80% of the work.
+                # Clamp at 80% so we don't overshoot if response is verbose.
+                p = (completed_stream_events / total_estimated_stream_events) * 80.0
+                progress_callback(min(80.0, p))
+
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futures = []
         for i, ch in enumerate(chunks):
-            futures.append(ex.submit(identify_and_score_chunk, ch, i, user_prompt))
+            futures.append(ex.submit(identify_and_score_chunk, ch, i, user_prompt, on_token))
+        
         for future in tqdm(as_completed(futures), total=len(futures), desc="LLM chunks"):
             res = future.result()
             if res and "clips" in res:
                 raw_clips.extend(res["clips"])
+            
+            # Ensure we don't stall completely if estimate was too high
+            # (force at least some progress per completed chunk)
+            with progress_lock:
+                completed_chunks_count = sum(1 for f in futures if f.done())
+                min_progress = (completed_chunks_count / len(chunks)) * 80.0
+                current_p = (completed_stream_events / total_estimated_stream_events) * 80.0
+                if min_progress > current_p:
+                     # Bump up the completed_stream_events so we don't jump backwards later
+                     # or just report higher progress.
+                     if progress_callback:
+                        progress_callback(min(80.0, min_progress))
 
     print(f"✅ LLM returned {len(raw_clips)} raw clip candidates across chunks.")
+    if progress_callback:
+        progress_callback(82.0)
 
     # Heuristic fallback: ensure we have at least one candidate highlight per
     # cluster of interesting sound events (within ~5 seconds), based purely on
@@ -879,6 +922,8 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
 
     # Materialize -> snap times to transcript -> enforce durations -> rebuild text
     clips = materialize_from_times(raw_clips, transcript, min_sec=min_sec, max_sec=max_sec)
+    if progress_callback:
+        progress_callback(85.0)
 
     # compute overall scores locally (weights)
     WEIGHTS = {"hook":0.3,"surprise_novelty":0.1,"emotion":0.2,"clarity_self_contained":0.1,"shareability":0.2,"cta_potential":0.1}
@@ -913,6 +958,8 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
         return sorted(selected, key=lambda c: c["start"]) 
 
     clips = merge_adjacent_clips(clips, max_gap=5.0, max_duration=MAX_SEC)
+    if progress_callback:
+        progress_callback(88.0)
 
     clips_before_diversity = list(clips)
     # Only apply diversity pruning when we have a lot of clips; otherwise keep
@@ -936,7 +983,8 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
         exports_dir = STORAGE_DIR / "exports" / job_id / "thumbs"
         exports_dir.mkdir(parents=True, exist_ok=True)
 
-        for clip in top:
+        total_thumbs = len(top)
+        for i, clip in enumerate(top):
             try:
                 start = float(clip.get("start", 0.0) or 0.0)
             except Exception:
@@ -967,6 +1015,12 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
                 clip["thumbnail_url"] = f"/media/{rel.as_posix()}"
             except Exception as e:
                 print(f"⚠️ Failed to generate thumbnail for {clip_id}: {e}")
+            
+            # Report progress for thumbnails (90% -> 100%)
+            if progress_callback and total_thumbs > 0:
+                p = 90.0 + ((i + 1) / total_thumbs) * 10.0
+                progress_callback(min(99.0, p))
+
     except Exception as e:
         print(f"⚠️ Thumbnail generation skipped due to error: {e}")
 

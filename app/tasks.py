@@ -112,6 +112,16 @@ def orchestrate_pipeline_task(
 
     # 1) Extract audio via ffmpeg directly to avoid import issues
     audio_out = job_dir / "audio.wav"
+    
+    # Define a helper for granular progress
+    def make_progress_callback(stage_name, start_percent, end_percent):
+        def callback(p):
+            # p is 0-100 from the sub-task
+            current = start_percent + (p / 100.0) * (end_percent - start_percent)
+            self.update_state(state="STARTED", meta={"stage": stage_name, "progress": round(current, 1)})
+        return callback
+
+    self.update_state(state="STARTED", meta={"stage": "extract_audio", "progress": 0})
 
     # If timeframe_percent is provided (0-100), limit the audio duration to that
     # percentage of the source video length.
@@ -160,6 +170,7 @@ def orchestrate_pipeline_task(
     ]
     subprocess.run(ffmpeg_cmd, check=True)
     audio_path = str(audio_out)
+    self.update_state(state="STARTED", meta={"stage": "extract_audio", "progress": 10})
 
     # 2) Chunk
     # Import local pipeline utilities
@@ -174,18 +185,30 @@ def orchestrate_pipeline_task(
     )
 
     chunks_dir = job_dir / "chunks"
-    chunk_files = chunk_audio(Path(audio_path), chunks_dir, chunk_seconds=chunk_seconds, overlap_seconds=overlap_seconds)
-    self.update_state(state="STARTED", meta={"stage": "chunk_audio", "progress": 30})
+    chunk_files = chunk_audio(
+        Path(audio_path), 
+        chunks_dir, 
+        chunk_seconds=chunk_seconds, 
+        overlap_seconds=overlap_seconds,
+        progress_callback=make_progress_callback("chunk_audio", 10, 20)
+    )
+    # self.update_state(state="STARTED", meta={"stage": "chunk_audio", "progress": 30})
 
     # 3) Transcribe
-    tr = transcribe_chunks(chunk_files, model_size=model_size)
-    self.update_state(state="STARTED", meta={"stage": "transcribe", "progress": 50})
+    tr = transcribe_chunks(
+        chunk_files, 
+        model_size=model_size,
+        progress_callback=make_progress_callback("transcribe", 20, 50)
+    )
+    # self.update_state(state="STARTED", meta={"stage": "transcribe", "progress": 50})
     (job_dir / "transcript.txt").write_text(tr.get("transcript", ""), encoding="utf-8")
 
     # 4) Enrich structured transcript JSON for highlight generation
+    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 50})
     segments = tr.get("segments", []) or []
     # basic audio energy per segment
     segments = compute_segment_energy(audio_path, segments)
+    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 52})
 
     # scene / shot changes from the source video
     try:
@@ -193,6 +216,7 @@ def orchestrate_pipeline_task(
     except Exception:
         cut_times = []
     segments = attach_scene_metadata(segments, cut_times)
+    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 55})
 
     # lightweight audio event tags (music / laughter) from the audio
     try:
@@ -201,10 +225,11 @@ def orchestrate_pipeline_task(
         events = []
     # Use the new merge function to include standalone events in gaps
     segments = merge_events_into_segments(segments, events)
+    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 58})
 
     # aggregate excitement score combining energy, cuts and tags
     segments = compute_excitement_score(segments)
-    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 70})
+    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 60})
 
     transcript_json_path = job_dir / "transcript.json"
     with open(transcript_json_path, "w", encoding="utf-8") as f:
@@ -223,9 +248,10 @@ def orchestrate_pipeline_task(
         min_sec=min_sec,
         max_sec=max_sec,
         user_prompt=prompt,
+        progress_callback=make_progress_callback("highlights", 60, 95)
     )
 
-    self.update_state(state="STARTED", meta={"stage": "highlights", "progress": 90})
+    self.update_state(state="STARTED", meta={"stage": "highlights", "progress": 100})
 
     return {
         "job_id": str(job_id),
