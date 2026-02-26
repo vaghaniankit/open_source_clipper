@@ -11,10 +11,10 @@ from tqdm import tqdm
 from openai import OpenAI
 from pathlib import Path
 
-from ..paths import STORAGE_DIR
+from ..paths import STORAGE_DIR, FONTS_DIR
 
 # ---------------- CONFIG ----------------
-client = OpenAI()
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 MODEL = "gpt-4o-mini"            # or "gpt-4o" for best accuracy
 TOP_K = 40
@@ -25,7 +25,7 @@ MAX_SEC = 90.0                   # default maximum highlight length
 HIGHLIGHT_DIR = "highlights"
 os.makedirs(HIGHLIGHT_DIR, exist_ok=True)
 
-FONT_PATH = "C:/Windows/Fonts/Arial.ttf" # update for your system
+FONT_PATH = str(FONTS_DIR / "Arial.ttf")
 
 '''
 - For each chosen highlight, generate **3 versions**:

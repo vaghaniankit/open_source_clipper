@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     git \
     curl \
+    redis-server \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Set python3 as default python
@@ -54,8 +56,11 @@ EXPOSE 8000
 # Copy supervisor config (if you plan to use it, otherwise compose handles this)
 COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
 
+# Create directory for supervisor logs
+RUN mkdir -p /var/log/supervisor
+
 # Default command
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "app.main:app"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 
 
 

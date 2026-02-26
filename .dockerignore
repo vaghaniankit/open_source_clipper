@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv
+venv/
+env/
+
+# Environment config
+# .env
+# .env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+Dockerfile*
+docker-compose.*
+.dockerignore
+
+# Project local/temp files
+celerybeat-schedule.*
+# cookies.txt
+debug_*.py
+highlights.json
+*.backup
+*_test.html
+
+# Input/Output Data directories (large files)
+storage/
+downloads/
+highlights/
+
+# Documentation
+docs/
+README.md
+*.md
+requirements.in
+start_*.sh

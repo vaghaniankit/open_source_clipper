@@ -5,6 +5,8 @@ services:
         build:
             context: .
             dockerfile: Dockerfile
+        # Override the default CMD (supervisord) to run only the web server in this multi-container setup
+        command: uvicorn app.main:app --host 0.0.0.0 --port 8000
         # Vast.ai typically uses host networking or specific port mappings.
         # If running via docker-compose inside the instance, map 8000 to the host port you want to expose.
         # Or let Vast.ai handle the mapping if using their on-start script.
