@@ -11,8 +11,8 @@ venv/
 env/
 
 # Environment config
-# .env
-# .env.*
+.env
+.env.*
 
 # IDE
 .vscode/
@@ -27,7 +27,7 @@ docker-compose.*
 
 # Project local/temp files
 celerybeat-schedule.*
-# cookies.txt
+cookies.txt
 debug_*.py
 highlights.json
 *.backup
