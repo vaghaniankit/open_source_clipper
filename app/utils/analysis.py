@@ -157,7 +157,6 @@ def _analyze_audio_events_yamnet(audio_path: str) -> List[Dict]:
         
         detected_labels = []
         for idx, score in zip(top_indices, top_scores):
-            print('\n\n➡ app/utils/analysis.py:161 score:', score)
             if score < 0.05:  # Confidence threshold
                 continue
             
@@ -165,8 +164,6 @@ def _analyze_audio_events_yamnet(audio_path: str) -> List[Dict]:
             name_lower = name.lower()
             
             # Map YAMNet's rich label space into a smaller set of tags
-            print('\n\n➡ app/utils/analysis.py:168 enable_non_speech_detection:', enable_non_speech_detection)
-            print('\n\n➡ app/utils/analysis.py:170 name_lower:', name_lower)
             if enable_non_speech_detection:
                 if "laughter" in name_lower or "giggle" in name_lower or "chuckle" in name_lower:
                     detected_labels.append("laughter")

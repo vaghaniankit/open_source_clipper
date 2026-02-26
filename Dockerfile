@@ -56,6 +56,11 @@ EXPOSE 8000
 # Copy supervisor config (if you plan to use it, otherwise compose handles this)
 COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
 
+# Setup entrypoint script for handling environment variables (e.g. COOKIES_B64)
+COPY docker/docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
 # Create directory for supervisor logs
 RUN mkdir -p /var/log/supervisor
 

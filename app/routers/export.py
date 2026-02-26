@@ -80,9 +80,7 @@ def export_preview_clip(
     URL that can be accessed via the /media mount.
     """
     job_dir = STORAGE_DIR / "pipeline" / job_id
-    print('\n\n XXXX ➡ app/routers/export.py:83 job_dir:', job_dir)
     highlights_path = job_dir / "highlights.json"
-    print('\n\n XXXX ➡ app/routers/export.py:85 highlights_path:', highlights_path)
     if not highlights_path.exists():
         raise HTTPException(status_code=404, detail="highlights not found for this job_id")
 
@@ -106,7 +104,6 @@ def export_preview_clip(
 
     # Prepare directories
     exports_dir = STORAGE_DIR / "exports" / job_id / "previews"
-    print('\n\n XXXX ➡ app/routers/export.py:109 exports_dir:', exports_dir)
     exports_dir.mkdir(parents=True, exist_ok=True)
 
     # Determine final preview path. We key by aspect so each ratio has its own
@@ -115,7 +112,6 @@ def export_preview_clip(
     aspect_suffix = aspect.replace(":", "x")
     preview_name = f"{Path(base_name).stem}_{aspect_suffix}_preview.mp4"
     preview_path = exports_dir / preview_name
-    print('\n\n XXXX ➡ app/routers/export.py:118 preview_path:', preview_path)
 
     if preview_path.exists():
         rel = preview_path.relative_to(STORAGE_DIR)
@@ -159,15 +155,11 @@ def export_preview_clip(
             from ..utils.subtitles import write_clip_subtitles
 
             srt_path, ass_path = write_clip_subtitles(transcript_json, clip, exports_dir)
-            print('\n\n XXXX ➡ app/routers/export.py:162 ass_path:', ass_path)
-            print('➡ app/routers/export.py:162 srt_path:', srt_path)
             subtitle_path = str(srt_path)
         except Exception as e:
-            print('\n\n XXXX ➡ app/routers/export.py:164 e:', e)
             subtitle_path = None
             ass_path = None
             
-    print('\n\n XXXX ➡ app/routers/export.py:168 ass_path:', ass_path)
 
     # 3) Apply speaker centering to the raw cut
     centered_path = exports_dir / f"{Path(base_name).stem}_centered_tmp.mp4"

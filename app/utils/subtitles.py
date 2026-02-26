@@ -200,7 +200,6 @@ def build_clip_srt_and_ass(
             sentence_start_time = -1.0
 
     srt_content = "\n".join(srt_lines)
-    print('\n\n XXXX ➡ app/utils/subtitles.py:201 srt_content:', srt_content)
     
     # --- Build ASS content (karaoke-style) ---
     ass_header = """[Script Info]
@@ -357,8 +356,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             ass_lines.append(f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text}")
 
     ass_content = "\n".join(ass_lines)
-    print('\n\n XXXX ➡ app/utils/subtitles.py:283 ass_content:', ass_content)
-    print('\n\n XXXX ➡ app/utils/subtitles.py:284 srt_content:', srt_content)
     return srt_content, ass_content
 
 
@@ -382,13 +379,10 @@ def write_clip_subtitles(transcript_path: Path, clip: Dict, out_dir: Path) -> (P
     import json
 
     data = json.loads(transcript_path.read_text(encoding="utf-8"))
-    print('\n\n XXXX ➡ app/utils/subtitles.py:307 data:', data)
     segments = data or []
-    print('\n\n XXXX ➡ app/utils/subtitles.py:309 segments:', segments)
     clip_start = float(clip.get("start", 0.0))
     clip_end = float(clip.get("end", 0.0))
     clip_id = clip.get("id") or "clip"
-    print('\n\n XXXX ➡ app/utils/subtitles.py:313 clip_id:', clip_id)
     
     out_dir.mkdir(parents=True, exist_ok=True)
     srt_name = f"{clip_id}.srt"
@@ -397,13 +391,9 @@ def write_clip_subtitles(transcript_path: Path, clip: Dict, out_dir: Path) -> (P
     ass_path = out_dir / ass_name
 
     srt_text, ass_text = build_clip_srt_and_ass(segments, clip_start, clip_end, clip=clip)
-    print('\n\n XXXX ➡ app/utils/subtitles.py:323 srt_text:', srt_text)
-    print('\n\n XXXX ➡ app/utils/subtitles.py:323 ass_text:', ass_text)
     srt_path.write_text(srt_text, encoding="utf-8")
     ass_path.write_text(ass_text, encoding="utf-8")
     
-    print('\n\n  XXXX ➡ app/utils/subtitles.py:327 ass_path:', ass_path)
-    print('\n\n  XXXX ➡ app/utils/subtitles.py:329 srt_path:', srt_path)
     return srt_path, ass_path
 
 

@@ -270,18 +270,14 @@ def export_video_task(self, path: str, aspect: str = "9:16"):
     Returns the output path.
     """
     job_id = getattr(getattr(self, "request", None), "id", None) or Path(path).stem
-    print('\n\n➡ app/tasks.py:248 job_id:', job_id)
     out_dir = STORAGE_DIR / "exports" / str(job_id)
-    print('\n\n➡ app/tasks.py:249 out_dir:', out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Build output filename
     src = Path(path)
     suffix = src.suffix or ".mp4"
     name = f"{src.stem}_{aspect.replace(':', 'x')}" + suffix
-    print('\n\nXXXX➡ app/tasks.py:255 name:', name)
     out_path = out_dir / name
-    print('\n\nXXXX➡ app/tasks.py:256 out_path:', out_path)
 
     # Perform export
     from .utils.export import export_with_aspect
