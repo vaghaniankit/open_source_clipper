@@ -50,7 +50,7 @@ def get_transcript(job_id: str):
     return JSONResponse({"job_id": job_id, "segments": segments})
 
 
-from ..utils.subtitles import write_clip_srt
+from ..utils.subtitles import build_clip_srt_and_ass
 
 
 @router.get("/{job_id}/clips/{clip_id}/subtitles")
@@ -61,7 +61,6 @@ def get_clip_subtitles(job_id: str, clip_id: str):
 
     ASS format is returned directly in the response payload.
     """
-    from ..utils.subtitles import build_clip_ass
     import json
 
     job_dir = STORAGE_DIR / "pipeline" / job_id
@@ -91,7 +90,7 @@ def get_clip_subtitles(job_id: str, clip_id: str):
     clip_end = float(clip.get("end", 0.0))
     segments = t_data if isinstance(t_data, list) else t_data.get("segments", [])
     
-    ass_text = build_clip_ass(segments, clip_start, clip_end, clip=clip)
+    _, ass_text = build_clip_srt_and_ass(segments, clip_start, clip_end, clip=clip)
 
     return JSONResponse({
         "job_id": job_id,
