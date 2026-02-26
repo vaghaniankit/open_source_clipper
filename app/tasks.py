@@ -115,10 +115,12 @@ def orchestrate_pipeline_task(
     
     # Define a helper for granular progress
     def make_progress_callback(stage_name, start_percent, end_percent):
+        # Capture task_id from the current context (main thread) so it's available in worker threads
+        task_id = self.request.id
         def callback(p):
             # p is 0-100 from the sub-task
             current = start_percent + (p / 100.0) * (end_percent - start_percent)
-            self.update_state(state="STARTED", meta={"stage": stage_name, "progress": round(current, 1)})
+            self.update_state(task_id=task_id, state="STARTED", meta={"stage": stage_name, "progress": round(current, 1)})
         return callback
 
     self.update_state(state="STARTED", meta={"stage": "extract_audio", "progress": 0})
