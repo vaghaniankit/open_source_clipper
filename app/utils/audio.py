@@ -8,12 +8,18 @@ import soundfile as sf
 from faster_whisper import WhisperModel
 
 
+from typing import List, Tuple, Dict, Union, Optional, Callable
+
 ChunkEntry = Tuple[Path, float]
 
 
-def chunk_audio(input_wav: Path, out_dir: Path, chunk_seconds: int = 30, overlap_seconds: int = 2) -> List[ChunkEntry]:
+def chunk_audio(input_wav: Path, out_dir: Path, chunk_seconds: int = 30, overlap_seconds: int = 2, progress_callback: Optional[Callable[[float], None]] = None) -> List[ChunkEntry]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    y, sr = librosa.load(str(input_wav), sr=None, mono=True)
+    # Use soundfile for faster loading (librosa is slower due to resampling checks/normalization)
+    y, sr = sf.read(str(input_wav), dtype='float32')
+    if y.ndim > 1:
+        y = y.mean(axis=1)
+
     total_samples = y.shape[0]
     chunk_len = int(chunk_seconds * sr)
     overlap = int(overlap_seconds * sr)
@@ -28,6 +34,10 @@ def chunk_audio(input_wav: Path, out_dir: Path, chunk_seconds: int = 30, overlap
         sf.write(str(out_path), part, sr)
         chunk_start_time = start / sr
         chunks.append((out_path, float(chunk_start_time)))
+        
+        if progress_callback and total_samples > 0:
+            progress_callback(min(100.0, (end / total_samples) * 100))
+
         if end == total_samples:
             break
         start += step
@@ -48,7 +58,7 @@ def _resolve_chunk_entry(entry, default_start: float = 0.0) -> Tuple[Path, float
     return Path(entry), float(default_start)
 
 
-def transcribe_chunks(chunks: List[Union[ChunkEntry, Path, str]], model_size: str = "base") -> Dict:
+def transcribe_chunks(chunks: List[Union[ChunkEntry, Path, str]], model_size: str = "base", progress_callback: Optional[Callable[[float], None]] = None) -> Dict:
     """Transcribe audio chunks with faster-whisper.
 
     Returns a dict with:
@@ -68,6 +78,8 @@ def transcribe_chunks(chunks: List[Union[ChunkEntry, Path, str]], model_size: st
     model = WhisperModel(effective_model)
     results = []
     full_text_parts: List[str] = []
+    total_chunks = len(chunks)
+
     for i, raw_entry in enumerate(chunks):
         wav_path, chunk_start = _resolve_chunk_entry(raw_entry, default_start=0.0)
 
@@ -112,6 +124,19 @@ def transcribe_chunks(chunks: List[Union[ChunkEntry, Path, str]], model_size: st
                 ]
             results.append(seg_dict)
             full_text_parts.append(seg.text)
+
+            if progress_callback and total_chunks > 0:
+                chunk_progress = 0.0
+                if dur > 0:
+                    chunk_progress = min(1.0, float(seg.end) / dur)
+                
+                # Overall progress calculation
+                overall_progress = ((i + chunk_progress) / total_chunks) * 100
+                progress_callback(overall_progress)
+        
+        if progress_callback and total_chunks > 0:
+            progress_callback(((i + 1) / total_chunks) * 100)
+
     transcript = " ".join([t.strip() for t in full_text_parts if t and t.strip()])
     return {"segments": results, "transcript": transcript}
 

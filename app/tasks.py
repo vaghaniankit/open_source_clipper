@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from .celery_app import celery_app
+from .paths import STORAGE_DIR
 
 # Default transcription model can be overridden via TRANSCRIBE_MODEL env var
 DEFAULT_TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "medium")
@@ -17,10 +18,10 @@ def download_youtube_task(self, url: str, filename: Optional[str] = None):
     """Download YouTube video using yt_dlp into storage/videos.
     Returns local path.
     """
-    base = Path(__file__).resolve().parent.parent
-    videos_dir = base / "storage" / "videos"
+    base = STORAGE_DIR.parent
+    videos_dir = STORAGE_DIR / "videos"
     videos_dir.mkdir(parents=True, exist_ok=True)
-    downloads_dir = base / "downloads"
+    downloads_dir = STORAGE_DIR / "downloads"
     downloads_dir.mkdir(parents=True, exist_ok=True)
 
     # Run download (into downloads/ via existing script), then move to videos/
@@ -52,11 +53,11 @@ def download_youtube_task(self, url: str, filename: Optional[str] = None):
 @celery_app.task(bind=True)
 def process_video_task(self, path: str):
     """Stub processing task: extract audio then return paths. Replace with orchestrator."""
-    base = Path(__file__).resolve().parent.parent
+    base = STORAGE_DIR.parent
     orig_cwd = os.getcwd()
     try:
         os.chdir(base)
-        out_path = base / "storage" / "videos" / (Path(path).stem + "_vocals.wav")
+        out_path = STORAGE_DIR / "videos" / (Path(path).stem + "_vocals.wav")
         cmd = [
             "ffmpeg", "-y",
             "-i", path,
@@ -87,10 +88,8 @@ def orchestrate_pipeline_task(
 
     Returns paths and an enriched transcript summary used for highlight generation.
     """
-    base = Path(__file__).resolve().parent.parent
-    storage = base / "storage"
     job_id = getattr(getattr(self, "request", None), "id", None) or Path(path).stem
-    job_dir = storage / "pipeline" / str(job_id)
+    job_dir = STORAGE_DIR / "pipeline" / str(job_id)
     job_dir.mkdir(parents=True, exist_ok=True)
 
     # Persist simple job metadata (prompt, duration preset, original path)
@@ -113,6 +112,18 @@ def orchestrate_pipeline_task(
 
     # 1) Extract audio via ffmpeg directly to avoid import issues
     audio_out = job_dir / "audio.wav"
+    
+    # Define a helper for granular progress
+    def make_progress_callback(stage_name, start_percent, end_percent):
+        # Capture task_id from the current context (main thread) so it's available in worker threads
+        task_id = self.request.id
+        def callback(p):
+            # p is 0-100 from the sub-task
+            current = start_percent + (p / 100.0) * (end_percent - start_percent)
+            self.update_state(task_id=task_id, state="STARTED", meta={"stage": stage_name, "progress": round(current, 1)})
+        return callback
+
+    self.update_state(state="STARTED", meta={"stage": "extract_audio", "progress": 0})
 
     # If timeframe_percent is provided (0-100), limit the audio duration to that
     # percentage of the source video length.
@@ -161,6 +172,7 @@ def orchestrate_pipeline_task(
     ]
     subprocess.run(ffmpeg_cmd, check=True)
     audio_path = str(audio_out)
+    self.update_state(state="STARTED", meta={"stage": "extract_audio", "progress": 10})
 
     # 2) Chunk
     # Import local pipeline utilities
@@ -170,22 +182,35 @@ def orchestrate_pipeline_task(
         attach_scene_metadata,
         analyze_audio_events,
         attach_audio_tags,
+        merge_events_into_segments,
         compute_excitement_score,
     )
 
     chunks_dir = job_dir / "chunks"
-    chunk_files = chunk_audio(Path(audio_path), chunks_dir, chunk_seconds=chunk_seconds, overlap_seconds=overlap_seconds)
-    self.update_state(state="STARTED", meta={"stage": "chunk_audio", "progress": 30})
+    chunk_files = chunk_audio(
+        Path(audio_path), 
+        chunks_dir, 
+        chunk_seconds=chunk_seconds, 
+        overlap_seconds=overlap_seconds,
+        progress_callback=make_progress_callback("chunk_audio", 10, 20)
+    )
+    # self.update_state(state="STARTED", meta={"stage": "chunk_audio", "progress": 30})
 
     # 3) Transcribe
-    tr = transcribe_chunks(chunk_files, model_size=model_size)
-    self.update_state(state="STARTED", meta={"stage": "transcribe", "progress": 50})
+    tr = transcribe_chunks(
+        chunk_files, 
+        model_size=model_size,
+        progress_callback=make_progress_callback("transcribe", 20, 50)
+    )
+    # self.update_state(state="STARTED", meta={"stage": "transcribe", "progress": 50})
     (job_dir / "transcript.txt").write_text(tr.get("transcript", ""), encoding="utf-8")
 
     # 4) Enrich structured transcript JSON for highlight generation
+    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 50})
     segments = tr.get("segments", []) or []
     # basic audio energy per segment
     segments = compute_segment_energy(audio_path, segments)
+    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 52})
 
     # scene / shot changes from the source video
     try:
@@ -193,17 +218,20 @@ def orchestrate_pipeline_task(
     except Exception:
         cut_times = []
     segments = attach_scene_metadata(segments, cut_times)
+    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 55})
 
     # lightweight audio event tags (music / laughter) from the audio
     try:
         events = analyze_audio_events(audio_path)
     except Exception:
         events = []
-    segments = attach_audio_tags(segments, events)
+    # Use the new merge function to include standalone events in gaps
+    segments = merge_events_into_segments(segments, events)
+    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 58})
 
     # aggregate excitement score combining energy, cuts and tags
     segments = compute_excitement_score(segments)
-    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 70})
+    self.update_state(state="STARTED", meta={"stage": "enrich_transcript", "progress": 60})
 
     transcript_json_path = job_dir / "transcript.json"
     with open(transcript_json_path, "w", encoding="utf-8") as f:
@@ -222,9 +250,10 @@ def orchestrate_pipeline_task(
         min_sec=min_sec,
         max_sec=max_sec,
         user_prompt=prompt,
+        progress_callback=make_progress_callback("highlights", 60, 95)
     )
 
-    self.update_state(state="STARTED", meta={"stage": "highlights", "progress": 90})
+    self.update_state(state="STARTED", meta={"stage": "highlights", "progress": 100})
 
     return {
         "job_id": str(job_id),
@@ -242,10 +271,8 @@ def export_video_task(self, path: str, aspect: str = "9:16"):
     """Export the given video path to the requested aspect ratio, padding as needed.
     Returns the output path.
     """
-    base = Path(__file__).resolve().parent.parent
-    storage = base / "storage"
     job_id = getattr(getattr(self, "request", None), "id", None) or Path(path).stem
-    out_dir = storage / "exports" / str(job_id)
+    out_dir = STORAGE_DIR / "exports" / str(job_id)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Build output filename
@@ -269,9 +296,7 @@ def export_clip_task(self, job_id: str, clip: dict, aspect: str = "9:16"):
     - clip: clip dict containing start, end, id, filename, etc.
     - aspect: "1:1", "16:9", or "9:16"
     """
-    base = Path(__file__).resolve().parent.parent
-    storage = base / "storage"
-    job_dir = storage / "pipeline" / str(job_id)
+    job_dir = STORAGE_DIR / "pipeline" / str(job_id)
 
     # Load highlights.json to get the source video path (authoritative)
     import json
@@ -290,7 +315,7 @@ def export_clip_task(self, job_id: str, clip: dict, aspect: str = "9:16"):
         raise RuntimeError(f"source video not found: {src}")
 
     # Build output directory under storage/exports/<job_id>
-    out_dir = storage / "exports" / str(job_id)
+    out_dir = STORAGE_DIR / "exports" / str(job_id) / "previews"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Use clip filename if present, otherwise derive one
@@ -321,19 +346,29 @@ def export_clip_task(self, job_id: str, clip: dict, aspect: str = "9:16"):
     # Prepare subtitles for this clip using the pipeline transcript.json
     transcript_json = job_dir / "transcript.json"
     subtitle_path: Optional[str] = None
+    ass_path: Optional[str] = None
     if transcript_json.exists():
         try:
-            from .utils.subtitles import write_clip_srt
+            from .utils.subtitles import write_clip_subtitles
 
-            srt_path = write_clip_srt(transcript_json, clip, out_dir)
-            subtitle_path = str(srt_path)
-        except Exception:
+            srt_path, ass_path_obj = write_clip_subtitles(transcript_json, clip, out_dir)
+            subtitle_path = str(srt_path)  # Keep using SRT for burnt-in subs
+            ass_path = str(ass_path_obj)
+        except Exception as e:
+            print(f"⚠️ Subtitle generation failed: {e}")
             subtitle_path = None
+            ass_path = None
 
     from .utils.export import export_with_aspect
 
     self.update_state(state="STARTED", meta={"stage": "export_clip", "progress": 80})
-    result_path = export_with_aspect(str(tmp_cut), str(raw_clip_path), aspect=aspect, subtitle_path=subtitle_path)
+    result_path = export_with_aspect(
+        str(tmp_cut), 
+        str(raw_clip_path), 
+        aspect=aspect, 
+        subtitle_path=subtitle_path,
+        ass_path=str(ass_path) if ass_path else None
+    )
 
     # Optionally remove tmp_cut later; for now, keep for debugging
     return {
@@ -352,14 +387,12 @@ def speaker_center_video_task(self, path: str):
     an already-exported highlight clip). The output will keep the same filename
     with a `_centered` suffix.
     """
-    base = Path(__file__).resolve().parent.parent
-    storage = base / "storage"
     src = Path(path)
     if not src.exists():
         raise RuntimeError(f"source video not found: {src}")
 
     job_id = getattr(getattr(self, "request", None), "id", None) or src.stem
-    out_dir = storage / "exports" / str(job_id)
+    out_dir = STORAGE_DIR / "exports" / str(job_id)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Build centered output filename
@@ -388,10 +421,8 @@ def generate_highlights_task(self, video_path: str, transcript_path: str):
     (for example produced by orchestrate_pipeline_task). It will write
     highlights.json into storage/pipeline/<job_id>/ and return the clips.
     """
-    base = Path(__file__).resolve().parent.parent
-    storage = base / "storage"
     job_id = getattr(getattr(self, "request", None), "id", None) or Path(video_path).stem
-    job_dir = storage / "pipeline" / str(job_id)
+    job_dir = STORAGE_DIR / "pipeline" / str(job_id)
 
     # Ensure job dir exists and resolve transcript path
     job_dir.mkdir(parents=True, exist_ok=True)

@@ -58,19 +58,65 @@
 
         jobIdText.textContent = jobId;
 
+        let currentProgress = 0;
+        let targetProgress = 0;
+        let currentStage = "";
+        let isAnimating = false;
+
+        function updateDOM(progress) {
+          progressBar.style.width = `${progress}%`;
+          if (currentStage) {
+            infoEl.textContent = `${currentStage} (${Math.floor(progress)}%)`;
+          } else {
+            infoEl.textContent = "";
+          }
+        }
+
+        function animateProgress() {
+          if (Math.abs(targetProgress - currentProgress) < 0.1) {
+            currentProgress = targetProgress;
+            updateDOM(currentProgress);
+            isAnimating = false;
+            return;
+          }
+
+          // Smooth interpolation
+          const diff = targetProgress - currentProgress;
+          let step = diff * 0.1; // Adjust speed here
+
+          // Ensure minimum step to reach target eventually
+          if (Math.abs(step) < 0.1) step = diff > 0 ? 0.1 : -0.1;
+
+          currentProgress += step;
+          
+          // Prevent overshooting if step is larger than remaining diff (mostly for the fixed step case)
+          if (Math.abs(currentProgress - targetProgress) < Math.abs(step)) {
+             currentProgress = targetProgress;
+          }
+
+          updateDOM(currentProgress);
+          requestAnimationFrame(animateProgress);
+        }
+
         async function fetchStatus() {
           try {
             const res = await fetch(`/jobs/${jobId}`);
             if (!res.ok) return;
             const data = await res.json();
             stateEl.textContent = data.state;
+            
             const p = typeof data.progress === "number" ? data.progress : 0;
-            progressBar.style.width = `${p}%`;
+            targetProgress = p;
 
             if (data.info && data.info.stage) {
-              infoEl.textContent = `${data.info.stage} (${p}%)`;
+              currentStage = data.info.stage;
             } else {
-              infoEl.textContent = "";
+              currentStage = "";
+            }
+
+            if (!isAnimating) {
+              isAnimating = true;
+              requestAnimationFrame(animateProgress);
             }
 
             if (data.state === "SUCCESS") {

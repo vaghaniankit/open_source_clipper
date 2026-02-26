@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -36,8 +37,6 @@ def export_clip(
     highlights_path = job_dir / "highlights.json"
     if not highlights_path.exists():
         raise HTTPException(status_code=404, detail="highlights not found for this job_id")
-
-    import json
 
     try:
         data = json.loads(highlights_path.read_text(encoding="utf-8"))
@@ -84,8 +83,6 @@ def export_preview_clip(
     highlights_path = job_dir / "highlights.json"
     if not highlights_path.exists():
         raise HTTPException(status_code=404, detail="highlights not found for this job_id")
-
-    import json
 
     try:
         data = json.loads(highlights_path.read_text(encoding="utf-8"))
@@ -152,14 +149,17 @@ def export_preview_clip(
     # 2) Build subtitles for this clip using transcript.json
     transcript_json = job_dir / "transcript.json"
     subtitle_path: Optional[str] = None
+    ass_path: Optional[str] = None
     if transcript_json.exists():
         try:
-            from ..utils.subtitles import write_clip_srt
+            from ..utils.subtitles import write_clip_subtitles
 
-            srt_path = write_clip_srt(transcript_json, clip, exports_dir)
+            srt_path, ass_path = write_clip_subtitles(transcript_json, clip, exports_dir)
             subtitle_path = str(srt_path)
-        except Exception:
+        except Exception as e:
             subtitle_path = None
+            ass_path = None
+            
 
     # 3) Apply speaker centering to the raw cut
     centered_path = exports_dir / f"{Path(base_name).stem}_centered_tmp.mp4"
@@ -174,8 +174,16 @@ def export_preview_clip(
 
     # 4) Export low-res preview with aspect and optional subtitles
     from ..utils.export import export_with_aspect
+    
 
-    export_with_aspect(str(src_for_export), str(preview_path), aspect=aspect, subtitle_path=subtitle_path)
+
+    export_with_aspect(
+        str(src_for_export), 
+        str(preview_path), 
+        aspect=aspect, 
+        subtitle_path=subtitle_path, 
+        ass_path=ass_path
+    )
 
     rel = preview_path.relative_to(STORAGE_DIR)
     # from_cache=False means this preview was just generated
@@ -199,8 +207,6 @@ def export_clip_download(
     highlights_path = job_dir / "highlights.json"
     if not highlights_path.exists():
         raise HTTPException(status_code=404, detail="highlights not found for this job_id")
-
-    import json
 
     try:
         data = json.loads(highlights_path.read_text(encoding="utf-8"))
@@ -254,14 +260,16 @@ def export_clip_download(
     # 2) Build subtitles for this clip using transcript.json
     transcript_json = job_dir / "transcript.json"
     subtitle_path: Optional[str] = None
+    ass_path: Optional[str] = None
     if transcript_json.exists():
         try:
-            from ..utils.subtitles import write_clip_srt
+            from ..utils.subtitles import write_clip_subtitles
 
-            srt_path = write_clip_srt(transcript_json, clip, exports_dir)
+            srt_path, ass_path = write_clip_subtitles(transcript_json, clip, exports_dir)
             subtitle_path = str(srt_path)
         except Exception:
             subtitle_path = None
+            ass_path = None
 
     # 3) Export HD clip with aspect and optional subtitles.
     #
@@ -274,7 +282,13 @@ def export_clip_download(
     # 4) Export HD clip with aspect and optional subtitles
     from ..utils.export import export_with_aspect
 
-    export_with_aspect(str(src_for_export), str(output_path), aspect=aspect, subtitle_path=subtitle_path)
+    export_with_aspect(
+        str(src_for_export), 
+        str(output_path), 
+        aspect=aspect, 
+        subtitle_path=subtitle_path, 
+        ass_path=ass_path
+    )
 
     rel = output_path.relative_to(STORAGE_DIR)
     return {"download_url": f"/media/{rel.as_posix()}"}

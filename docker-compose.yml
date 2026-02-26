@@ -1,54 +1,79 @@
-version: "3.8"
-
 services:
-  web:
-    build: .
-    command: gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 app.main:app
-    volumes:
-      - .:/app
-    ports:
-      - "8000:8000"
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    depends_on:
-      - redis
+    # web: Main FastAPI web application (serves API and web frontend)
+    web:
+        container_name: open_source_clipper_web
+        build:
+            context: .
+            dockerfile: Dockerfile
+        # Override the default CMD (supervisord) to run only the web server in this multi-container setup
+        command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+        # Vast.ai typically uses host networking or specific port mappings.
+        # If running via docker-compose inside the instance, map 8000 to the host port you want to expose.
+        # Or let Vast.ai handle the mapping if using their on-start script.
+        # Here we map 8000:8000, assuming you open port 8000 on Vast.ai dashboard.
+        ports:
+            - "8000:8000"
+        volumes:
+            - ./storage:/app/storage
+            - ./downloads:/app/downloads
+            - ./cookies.txt:/app/cookies.txt # Mount cookies.txt if present
+        env_file:
+            - .env
+        restart: unless-stopped
+        depends_on:
+            - redis
 
-  worker:
-    build: .
-    command: celery -A app.celery_app worker --loglevel=info
-    volumes:
-      - .:/app
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    depends_on:
-      - redis
+    # worker: Celery GPU worker for processing GPU-accelerated tasks from the queue
+    worker:
+        container_name: open_source_clipper_worker
+        build:
+            context: .
+            dockerfile: Dockerfile
+        # We use the generic 'celery' queue unless you have specific routing set up.
+        # If you separated queues in app code, adjust accordingly.
+        # Based on celery_app.py, default queue is 'celery'.
+        command: celery -A app.celery_app worker -l info -c 1
+        volumes:
+            - ./storage:/app/storage
+            - ./downloads:/app/downloads
+            - ./cookies.txt:/app/cookies.txt # Mount cookies.txt if present
+        env_file:
+            - .env
+        restart: unless-stopped
+        deploy:
+            resources:
+                reservations:
+                    devices:
+                        - driver: nvidia
+                          capabilities: [gpu]
+        depends_on:
+            - redis
 
-  beat:
-    build: .
-    command: celery -A app.celery_app beat --loglevel=info
-    volumes:
-      - .:/app
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    depends_on:
-      - redis
+    # beat: Celery Beat scheduler for scheduled/background tasks
+    beat:
+        container_name: open_source_clipper_beat
+        build:
+            context: .
+            dockerfile: Dockerfile
+        command: celery -A app.celery_app beat -l info
+        volumes:
+            - ./storage:/app/storage
+            - ./downloads:/app/downloads
+        env_file:
+            - .env
+        restart: unless-stopped
+        depends_on:
+            - redis
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-# Here's a breakdown of the services:
+    # redis: Redis message broker for Celery and backend
+    redis:
+        container_name: open_source_clipper_redis
+        image: "redis:7-alpine"
+        restart: unless-stopped
+        volumes:
+            - redis_data:/data
+        ports:
+            - "6379:6379"
 
-# web: This service runs your main web application. When a user initiates a long-running process (like exporting a video), the web service creates a "task" and puts it into a queue.
-
-# redis: This acts as the message broker, holding the queue of tasks that need to be processed.
-
-# worker: This service, the Celery worker, constantly monitors the Redis queue. When a new task appears, the worker picks it up and executes it in the background. This prevents the web application from freezing while waiting for heavy jobs to complete.
-
-# beat: This is the Celery scheduler. It doesn't execute tasks itself. Instead, its job is to send tasks to the Redis queue based on a predefined schedule. For example, you could configure a task to run every hour, every day at midnight, or every Monday morning.
+volumes:
+    redis_data:

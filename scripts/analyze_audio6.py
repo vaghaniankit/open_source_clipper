@@ -54,7 +54,7 @@ def transcribe_words(audio_path: str, model_size: str) -> List[Dict[str, float]]
     return words
 
 def words_for_segment(words: List[Dict[str, float]], start: float, end: float) -> List[Dict[str, float]]:
-    return [w for w in words if start <= w["start"] <= end]
+    return [w for w in words if start <= w.get("start", 0) <= end]
 
 # ------------------------------
 # Audio detectors
@@ -143,16 +143,7 @@ def detect_scenes(video_path: str, threshold: float = 30.0) -> List[Segment]:
 # ------------------------------
 # Export highlight with karaoke
 # ------------------------------
-def make_karaoke_ass_from_words(words, ass_file, cfg):
-    with open(ass_file, "w", encoding="utf-8") as f:
-        f.write("[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\n")
-        f.write("Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, Bold, Italic, Underline, "
-                "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
-                "MarginR, MarginV, Encoding\n")
-        f.write(f"Style: Default,{cfg['font']},{cfg['font_size']},&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,"
-                f"1,1,0,2,10,10,10,1\n\n[Events]\n")
-        for w in words:
-            f.write(f"Dialogue: 0,{w['start']:.2f},{w['end']:.2f},Default,,0,0,0,,{w['word']}\n")
+from app.utils.subtitles import make_karaoke_ass_from_words, escape_path_for_ffmpeg
 
 def export_highlight_with_karaoke(video_path: str, seg: Segment, words: List[Dict[str, float]],
                                   output_dir: str = "highlights", export_mode: str = "both", cfg=CONFIG):
@@ -169,7 +160,8 @@ def export_highlight_with_karaoke(video_path: str, seg: Segment, words: List[Dic
     if seg_words:
         make_karaoke_ass_from_words(seg_words, ass_file, cfg["karaoke"])
         if export_mode in ("burned", "both"):
-            subprocess.run(["ffmpeg", "-y", "-i", out_clip, "-vf", f"subtitles={ass_file}", "-c:a", "copy", burned_out],
+            escaped_ass_path = escape_path_for_ffmpeg(ass_file)
+            subprocess.run(["ffmpeg", "-y", "-i", out_clip, "-vf", f"subtitles={escaped_ass_path}", "-c:a", "copy", burned_out],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     return {"clip": out_clip, "ass": ass_file}
 

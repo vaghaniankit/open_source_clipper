@@ -1,5 +1,6 @@
 import yt_dlp
 import os
+from app.config import settings
 
 
 def download_youtube(url, choice="video", quality="best", filename=None):
@@ -22,10 +23,13 @@ def download_youtube(url, choice="video", quality="best", filename=None):
         # "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
 
-    # If cookies.txt exists, load it automatically
-    if os.path.exists("cookies.txt"):
-        base_opts["cookiefile"] = "cookies.txt"
-        print("🍪 Using cookies.txt for authentication...")
+    # If cookies.txt exists as a file, load it automatically
+    cookie_file = settings.YOUTUBE_COOKIE_FILE
+    if cookie_file and os.path.isfile(cookie_file):
+        base_opts["cookiefile"] = cookie_file
+        print(f"🍪 Using cookies from {cookie_file} for authentication...")
+    else:
+        print("⚠️ No cookies.txt file found, or the path points to a directory. YouTube downloads may fail with 'Sign in' errors.")
 
     attempts = []
 

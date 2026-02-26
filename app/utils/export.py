@@ -1,12 +1,20 @@
 import subprocess
 from pathlib import Path
 from typing import Literal, Optional
-from app.utils.subtitles import escape_path_for_ffmpeg
+
+from .subtitles import escape_path_for_ffmpeg
 
 Aspect = Literal["1:1", "16:9", "9:16"]
 
 
-def export_with_aspect(input_path: str, output_path: str, aspect: Aspect = "9:16", subtitle_path: Optional[str] = None) -> str:
+def export_with_aspect(
+    input_path: str, 
+    output_path: str, 
+    aspect: Aspect = "9:16", 
+    subtitle_path: Optional[str] = None,
+    ass_path: Optional[str] = None
+) -> str:
+    print('\n\n➡ app/utils/export.py:17 ass_path:', ass_path)
     src = Path(input_path)
     dst = Path(output_path)
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -22,14 +30,16 @@ def export_with_aspect(input_path: str, output_path: str, aspect: Aspect = "9:16
     W, H = canvas[aspect]
 
     # Scale to fit inside canvas, then pad to exact canvas
-    base_vf = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p"
+    filters = [f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p"]
 
-    if subtitle_path:
+    if ass_path:
+        ass_escaped = escape_path_for_ffmpeg(ass_path)
+        filters.append(f"ass={ass_escaped}")
+    elif subtitle_path:
         subs_escaped = escape_path_for_ffmpeg(subtitle_path)
-        # Use the 'ass' filter for ASS subtitles
-        vf = f"{base_vf},ass={subs_escaped}"
-    else:
-        vf = base_vf
+        filters.append(f"subtitles={subs_escaped}")
+    
+    vf = ",".join(filters)
 
     def _run_with(codec: str):
         cmd = [

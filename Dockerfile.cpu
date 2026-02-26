@@ -1,0 +1,48 @@
+# Use official Python runtime as a parent image
+FROM python:3.10-slim-bullseye
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+# Python is already installed in the base image, so we only need the other tools
+# We include build-essential for compiling some Python packages if needed
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    libgl1 \
+    git \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set work directory
+WORKDIR /app
+
+# Upgrade pip
+RUN pip install --upgrade pip
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+# We install torch explicitly first to ensure we get the CPU version to save space/download time
+# Using the CPU-only index for PyTorch
+RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# Install the rest of the requirements
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy project
+COPY . .
+
+# Create storage directories
+RUN mkdir -p storage/videos storage/audio storage/pipeline storage/exports storage/data downloads
+
+# Expose the port
+EXPOSE 8000
+
+# Default command
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "app.main:app"]
