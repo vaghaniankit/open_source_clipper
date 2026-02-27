@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     git \
     curl \
+    nodejs \
+    npm \
     redis-server \
     supervisor \
     && rm -rf /var/lib/apt/lists/*

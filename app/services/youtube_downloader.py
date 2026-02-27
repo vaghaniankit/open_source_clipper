@@ -11,16 +11,16 @@ def download_youtube(url, choice="video", quality="best", filename=None):
     base_opts = {
         "outtmpl": outtmpl,
         "merge_output_format": "mp4",  # always make proper MP4
-        "http_headers": {
-            # Reasonable desktop UA
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0 Safari/537.36"
-            )
-        },
+        # "http_headers": {
+        #     # Reasonable desktop UA
+        #     "User-Agent": (
+        #         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        #         "AppleWebKit/537.36 (KHTML, like Gecko) "
+        #         "Chrome/120.0 Safari/537.36"
+        #     )
+        # },
         # Use Android client which is often more stable for 1080p/4k
-        # "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
 
     # If cookies.txt exists as a file, load it automatically

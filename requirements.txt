@@ -1,35 +1,28 @@
-openai>=1.40.0
-tqdm>=4.66.0
-opencv-python>=4.10.0.84
+Authlib>=1.3.0
+celery>=5.4.0
+ctranslate2>=4.3.1
+faster-whisper>=1.0.0
+fastapi>=0.115.0
+ffmpeg-python>=0.2.0
+gunicorn>=22.0.0
+itsdangerous>=2.1.2
+librosa>=0.10.1
 mediapipe>=0.10.14
 numpy>=1.26.0
-librosa>=0.10.1
-soundfile>=0.12.1
-faster-whisper>=1.0.0
+openai>=1.40.0
+opencv-python>=4.10.0.84
+python-dotenv>=1.0.1
+python-multipart>=0.0.9
+redis>=5.0.0
 scenedetect[opencv]>=0.6.2
-ffmpeg-python>=0.2.0
+soundfile>=0.12.1
 tensorflow>=2.17.0
 tensorflow-hub>=0.16.0
-yt-dlp>=2024.8.6
+tqdm>=4.66.0
+uvicorn[standard]>=0.30.0
 whisperx>=3.1.1
+yt-dlp>=2024.8.6 # Recommended to keep this updated (e.g. >=2025.x.x) for YouTube changes
 # torch and torchaudio are installed separately in Dockerfile to ensure CUDA support.
 # If running locally, install them with: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
 # torch>=2.3.0
 # torchaudio>=2.3.0
-ctranslate2>=4.3.1
-
-# Web backend & queue
-gunicorn>=22.0.0
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-python-multipart>=0.0.9
-celery>=5.4.0
-redis>=5.0.0
-
-# Auth
-Authlib>=1.3.0
-
-# Others
-python-dotenv>=1.0.1
-itsdangerous>=2.1.2
-
