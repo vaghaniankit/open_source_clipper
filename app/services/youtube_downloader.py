@@ -1,6 +1,7 @@
 import yt_dlp
 import os
 from app.config import settings
+from app.paths import BASE_DIR
 
 
 def download_youtube(url, choice="video", quality="best", filename=None):
@@ -19,12 +20,23 @@ def download_youtube(url, choice="video", quality="best", filename=None):
         #         "Chrome/120.0 Safari/537.36"
         #     )
         # },
-        # Use Android client which is often more stable for 1080p/4k
-        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
 
     # If cookies.txt exists as a file, load it automatically
     cookie_file = settings.YOUTUBE_COOKIE_FILE
+
+    if not cookie_file:
+        # Default check in root
+        possible_path = BASE_DIR / "cookies.txt"
+        if possible_path.is_file():
+            cookie_file = str(possible_path)
+    else:
+        # If relative path provided
+        if not os.path.isabs(cookie_file):
+            possible_path = BASE_DIR / cookie_file
+            if possible_path.is_file():
+                cookie_file = str(possible_path)
+
     if cookie_file and os.path.isfile(cookie_file):
         base_opts["cookiefile"] = cookie_file
         print(f"🍪 Using cookies from {cookie_file} for authentication...")
