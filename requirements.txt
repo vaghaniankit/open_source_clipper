@@ -22,6 +22,8 @@ tqdm>=4.66.0
 uvicorn[standard]>=0.30.0
 whisperx>=3.1.1
 yt-dlp>=2024.8.6 # Recommended to keep this updated (e.g. >=2025.x.x) for YouTube changes
+secretstorage>=3.3.3
+keyring>=24.0.0
 # torch and torchaudio are installed separately in Dockerfile to ensure CUDA support.
 # If running locally, install them with: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
 # torch>=2.3.0
