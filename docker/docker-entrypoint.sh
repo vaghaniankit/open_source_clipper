@@ -4,6 +4,11 @@ set -e
 # Add the local bin directory to the PATH
 export PATH="/home/user/.local/bin:$PATH"
 
+# Load .env file if it exists (for when it's baked into the image)
+if [ -f /app/.env ]; then
+    export $(grep -v '^#' /app/.env | xargs)
+fi
+
 # Decode COOKIES_B64 environment variable to /app/cookies.txt if present
 # This allows passing the cookies file content via an environment variable (e.g. in Vast.ai)
 if [ -n "$COOKIES_B64" ]; then
