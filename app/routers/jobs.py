@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from ..celery_app import celery_app
 from ..paths import STORAGE_DIR
+from ..utils.env import get_clean_env
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -80,7 +81,7 @@ def _ensure_clip_thumbnails(job_id: str, highlights: dict) -> dict:
                 str(thumb_path),
             ]
             try:
-                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=get_clean_env())
             except Exception:
                 continue
 

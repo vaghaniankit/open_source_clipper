@@ -14,6 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
 from .paths import STORAGE_DIR, UPLOAD_TMP_DIR, VIDEOS_DIR
+from .utils.env import get_clean_env
 from .routers.uploads import router as uploads_router
 from .routers.youtube import router as youtube_router
 from .routers.pipeline import router as pipeline_router
@@ -209,7 +210,7 @@ def step_prompt_get(request: Request):
                         "-of",
                         "default=noprint_wrappers=1:nokey=1",
                         local_path,
-                    ], capture_output=True, text=True, check=False)
+                    ], capture_output=True, text=True, check=False, env=get_clean_env())
                     total_dur = float(probe.stdout.strip() or 0) if probe.stdout else 0.0
                     if total_dur > 0:
                         hours = int(total_dur // 3600)

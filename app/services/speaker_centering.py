@@ -3,6 +3,7 @@ import mediapipe as mp
 import numpy as np
 import subprocess
 import os
+from ..utils.env import get_clean_env
 
 # ---------------- SETTINGS ----------------
 input_video = "highlight_clip_004.mp4"
@@ -126,7 +127,7 @@ def center_speaker(input_path: str, output_path: str) -> bool:
         "-shortest",
         output_path,
     ]
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, env=get_clean_env())
     if os.path.exists(temp_out):
         os.remove(temp_out)
     return True

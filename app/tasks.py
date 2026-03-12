@@ -7,6 +7,7 @@ from typing import Optional
 
 from .celery_app import celery_app
 from .paths import STORAGE_DIR
+from .utils.env import get_clean_env
 
 # Default transcription model can be overridden via TRANSCRIBE_MODEL env var
 DEFAULT_TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "medium")
@@ -68,7 +69,7 @@ def process_video_task(self, path: str):
             str(out_path),
         ]
         self.update_state(state="STARTED", meta={"stage": "extract_audio", "progress": 10})
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=get_clean_env())
         return {"audio_path": str(out_path)}
     finally:
         os.chdir(orig_cwd)
@@ -149,6 +150,7 @@ def orchestrate_pipeline_task(
                 capture_output=True,
                 text=True,
                 check=False,
+                env=get_clean_env(),
             )
             total_dur = float(probe.stdout.strip() or 0) if probe.stdout else 0.0
             if total_dur > 0:
@@ -170,7 +172,7 @@ def orchestrate_pipeline_task(
         "32k",
         str(audio_out),
     ]
-    subprocess.run(ffmpeg_cmd, check=True)
+    subprocess.run(ffmpeg_cmd, check=True, env=get_clean_env())
     audio_path = str(audio_out)
     self.update_state(state="STARTED", meta={"stage": "extract_audio", "progress": 10})
 
@@ -341,7 +343,7 @@ def export_clip_task(self, job_id: str, clip: dict, aspect: str = "9:16"):
         str(tmp_cut),
     ]
     self.update_state(state="STARTED", meta={"stage": "cut_clip", "progress": 30})
-    subprocess.run(cut_cmd, check=True)
+    subprocess.run(cut_cmd, check=True, env=get_clean_env())
 
     # Prepare subtitles for this clip using the pipeline transcript.json
     transcript_json = job_dir / "transcript.json"

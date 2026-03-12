@@ -12,6 +12,7 @@ from openai import OpenAI
 from pathlib import Path
 
 from ..paths import STORAGE_DIR, FONTS_DIR
+from ..utils.env import get_clean_env
 
 # ---------------- CONFIG ----------------
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -1010,7 +1011,7 @@ def generate_highlights(input_video: str, transcript_path: str, job_dir: str,
             ]
 
             try:
-                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=get_clean_env())
                 rel = thumb_path.relative_to(STORAGE_DIR)
                 clip["thumbnail_url"] = f"/media/{rel.as_posix()}"
             except Exception as e:

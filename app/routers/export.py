@@ -6,6 +6,7 @@ from fastapi import APIRouter, Form, HTTPException
 
 from ..tasks import export_video_task, export_clip_task, speaker_center_video_task
 from ..paths import STORAGE_DIR
+from ..utils.env import get_clean_env
 
 router = APIRouter(prefix="/export", tags=["export"])  # endpoint: POST /
 
@@ -144,7 +145,7 @@ def export_preview_clip(
 
     import subprocess
 
-    subprocess.run(cut_cmd, check=True)
+    subprocess.run(cut_cmd, check=True, env=get_clean_env())
 
     # 2) Build subtitles for this clip using transcript.json
     transcript_json = job_dir / "transcript.json"
@@ -255,7 +256,7 @@ def export_clip_download(
 
     import subprocess
 
-    subprocess.run(cut_cmd, check=True)
+    subprocess.run(cut_cmd, check=True, env=get_clean_env())
 
     # 2) Build subtitles for this clip using transcript.json
     transcript_json = job_dir / "transcript.json"

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from .subtitles import escape_path_for_ffmpeg
+from .env import get_clean_env
 
 Aspect = Literal["1:1", "16:9", "9:16"]
 
@@ -52,7 +53,7 @@ def export_with_aspect(
             "-c:a", "aac",
             str(dst),
         ]
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=get_clean_env())
 
     try:
         _run_with("libx264")
@@ -67,6 +68,6 @@ def export_with_aspect(
                 "-c:a", "aac",
                 str(dst),
             ]
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, env=get_clean_env())
 
     return str(dst)
